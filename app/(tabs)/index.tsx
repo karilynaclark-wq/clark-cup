@@ -136,7 +136,9 @@ export default function HomeScreen() {
         .order('total_points', { ascending: false }),
       supabase
         .from('upcoming_events')
-        .select('*, profiles(username)')
+        // Name the FK: profile_id and created_by both point at profiles,
+        // so a bare profiles(username) embed is ambiguous and errors.
+        .select('*, profiles!profile_id(username)')
         .order('event_date', { ascending: true }),
     ]);
 
