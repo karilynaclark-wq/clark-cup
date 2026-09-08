@@ -35,6 +35,8 @@ const C = {
 
 type UpcomingEvent = {
   id: string;
+  event_date: string;                      // ISO date, start
+  end_date: string | null;                 // ISO date, end of a range
   date_label: string;
   name: string;
   icon: string;
@@ -58,6 +60,24 @@ const fmtShort = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', da
 //   single day      → "June 15"
 //   same month      → "July 4–6"
 //   spanning months → "Jul 30 – Aug 2"
+// Whole days from today to an ISO date, in local time
+const daysFromToday = (iso: string) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const [y, m, d] = iso.split('-').map(Number);
+  return Math.round((new Date(y, m - 1, d).getTime() - today.getTime()) / 86400000);
+};
+
+// "in 7 days" / "tomorrow" / "today" / "happening now" for a range in progress
+const countdownLabel = (ev: { event_date: string; end_date: string | null }) => {
+  const start = daysFromToday(ev.event_date);
+  const end   = ev.end_date ? daysFromToday(ev.end_date) : start;
+  if (start > 1)  return `in ${start} days`;
+  if (start === 1) return 'tomorrow';
+  if (start === 0) return 'today';
+  return end >= 0 ? 'happening now' : '';
+};
+
 const isSameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
@@ -79,24 +99,7 @@ function avatarColor(name: string) {
   return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
 }
 
-function parseDate(label: string): { month: string; day: string; isRange: boolean } {
-  const parts = label.trim().split(' ');
-  const month = parts[0]?.slice(0, 3) ?? '';
-  const day   = parts.slice(1).join(' ');
-  return { month, day, isRange: day.includes('–') || day.includes('-') };
-}
-
-function isHot(label: string): boolean {
-  try {
-    const now   = new Date();
-    const parts = label.trim().split(' ');
-    const month = parts[0];
-    const day   = parseInt(parts[1]?.split('–')[0] ?? '1', 10);
-    const year  = now.getFullYear();
-    const d     = new Date(`${month} ${day}, ${year}`);
-    return (d.getTime() - now.getTime()) < 30 * 24 * 60 * 60 * 1000;
-  } catch { return false; }
-}
+const CARD_W = 232;
 
 const CATEGORY_LABELS: Record<string, string> = {
   sunday_call:  'Sunday Call',
@@ -117,7 +120,7 @@ export default function HomeScreen() {
   const [showDatePicker,   setShowDatePicker]   = useState(false);
   const [showEndPicker,    setShowEndPicker]    = useState(false);
   const [newEventName,     setNewEventName]     = useState('');
-  const [newEventIcon,     setNewEventIcon]     = useState('📅');
+  const [newEventIcon,     setNewEventIcon]     = useState('✈️');
   const [savingEvent,      setSavingEvent]      = useState(false);
 
   const fetchData = useCallback(async () => {
@@ -176,7 +179,7 @@ export default function HomeScreen() {
       profile_id: newEventFor,
       created_by: profile?.id ?? null,
       name:       newEventName.trim(),
-      icon:       newEventIcon || '📅',
+      icon:       newEventIcon || '✈️',
     });
     setSavingEvent(false);
     if (error) { Alert.alert('Error', 'Could not save event.'); return; }
@@ -186,7 +189,7 @@ export default function HomeScreen() {
     setShowDatePicker(false);
     setShowEndPicker(false);
     setNewEventName('');
-    setNewEventIcon('📅');
+    setNewEventIcon('✈️');
     setNewEventFor(defaultEventFor());
     fetchData();
   };
@@ -250,41 +253,48 @@ export default function HomeScreen() {
               <Text style={styles.addBtnText}>+ Add</Text>
             </TouchableOpacity>
           </View>
-          <View style={styles.eventsCard}>
-            {events.map((ev, i) => {
-              const { month, day, isRange } = parseDate(ev.date_label);
-              const hot = isHot(ev.date_label);
-              return (
-                <View key={ev.id} style={[styles.eventItem, i < events.length - 1 && styles.eventBorder]}>
-                  <View style={styles.eDateCol}>
-                    <Text style={styles.eMonth}>{month}</Text>
-                    <Text style={[styles.eDay, isRange && styles.eDaySmall]}>{day}</Text>
-                  </View>
-                  <View style={[styles.ePip, hot && styles.ePipHot]} />
-                  <View style={styles.eTextCol}>
-                    <Text style={styles.eName}>{ev.name}</Text>
-                    <Text style={styles.eFor}>
+
+          {events.length === 0 ? (
+            <View style={styles.eventsEmpty}>
+              <Text style={styles.emptyText}>No upcoming events — tap + Add!</Text>
+            </View>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.eventScroll}
+              decelerationRate="fast"
+              snapToInterval={CARD_W + 12}
+              snapToAlignment="start"
+            >
+              {events.map((ev) => {
+                const countdown = countdownLabel(ev);
+                return (
+                  <View key={ev.id} style={styles.eventCard}>
+                    <View style={styles.ecTop}>
+                      <Text style={styles.ecIcon}>{ev.icon}</Text>
+                      {profile?.id && ev.created_by === profile.id && (
+                        <TouchableOpacity
+                          onPress={() => handleDeleteEvent(ev)}
+                          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                          accessibilityLabel={`Delete ${ev.name}`}>
+                          <Text style={styles.ecDelete}>✕</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                    <View style={styles.ecDateRow}>
+                      <Text style={styles.ecDate}>{ev.date_label}</Text>
+                      {countdown !== '' && <Text style={styles.ecCountdown}>{countdown}</Text>}
+                    </View>
+                    <Text style={styles.ecName} numberOfLines={2}>{ev.name}</Text>
+                    <Text style={styles.ecFor}>
                       {ev.profiles?.username ? `For ${ev.profiles.username}` : 'Everyone'}
                     </Text>
                   </View>
-                  <Text style={styles.eIcon}>{ev.icon}</Text>
-                  {profile?.id && ev.created_by === profile.id && (
-                    <TouchableOpacity
-                      onPress={() => handleDeleteEvent(ev)}
-                      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                      accessibilityLabel={`Delete ${ev.name}`}>
-                      <Text style={styles.eDelete}>✕</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              );
-            })}
-            {events.length === 0 && (
-              <View style={styles.eventItem}>
-                <Text style={styles.emptyText}>No upcoming events — tap + Add!</Text>
-              </View>
-            )}
-          </View>
+                );
+              })}
+            </ScrollView>
+          )}
         </View>
 
         {/* ── REMINDERS ──────────────────────────────────── */}
@@ -347,7 +357,7 @@ export default function HomeScreen() {
       <Modal visible={addEventModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setAddEventModal(false)}>
         <KeyboardAvoidingView style={styles.modalContainer} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => { setAddEventModal(false); setNewEventDate(new Date()); setNewEventEnd(new Date()); setShowDatePicker(false); setShowEndPicker(false); setNewEventName(''); setNewEventIcon('📅'); setNewEventFor(defaultEventFor()); }}>
+            <TouchableOpacity onPress={() => { setAddEventModal(false); setNewEventDate(new Date()); setNewEventEnd(new Date()); setShowDatePicker(false); setShowEndPicker(false); setNewEventName(''); setNewEventIcon('✈️'); setNewEventFor(defaultEventFor()); }}>
               <Text style={styles.modalCancel}>Cancel</Text>
             </TouchableOpacity>
             <Text style={styles.modalTitle}>Add Event</Text>
@@ -419,7 +429,7 @@ export default function HomeScreen() {
               placeholder="e.g. Traveling to..." placeholderTextColor={C.inkDim} />
             <Text style={styles.formLabel}>Icon (emoji)</Text>
             <TextInput style={styles.input} value={newEventIcon} onChangeText={setNewEventIcon}
-              placeholder="📅" placeholderTextColor={C.inkDim} />
+              placeholder="✈️" placeholderTextColor={C.inkDim} />
           </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
@@ -469,17 +479,19 @@ const styles = StyleSheet.create({
   eventsCard:  { backgroundColor: C.card, borderRadius: 22, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 3 },
   eventBorder: { borderBottomWidth: 1, borderBottomColor: 'rgba(28,26,22,0.07)' },
   eventItem:   { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 18, paddingVertical: 15 },
-  eDateCol:    { width: 42, flexShrink: 0 },
-  eMonth:      { fontSize: 9, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8, color: C.inkDim, lineHeight: 13 },
-  eDay:        { fontSize: 26, lineHeight: 28, letterSpacing: -0.5, color: C.ink, fontStyle: 'italic' },
-  eDaySmall:   { fontSize: 17, lineHeight: 22 },
-  ePip:        { width: 7, height: 7, borderRadius: 4, backgroundColor: C.borderMd, flexShrink: 0 },
-  ePipHot:     { backgroundColor: C.accent },
-  eTextCol:    { flex: 1 },
-  eName:       { fontSize: 14, fontWeight: '500', color: C.ink, lineHeight: 19 },
-  eFor:        { fontSize: 12, color: C.inkMid, marginTop: 1 },
-  eIcon:       { fontSize: 20, opacity: 0.85 },
-  eDelete:     { fontSize: 15, color: C.inkDim, paddingLeft: 12, fontWeight: '500' },
+
+  // Upcoming: horizontally scrolling cards
+  eventScroll: { gap: 12, paddingRight: 20, paddingVertical: 2 },
+  eventsEmpty: { backgroundColor: C.card, borderRadius: 18, paddingVertical: 22, alignItems: 'center' },
+  eventCard:   { width: CARD_W, backgroundColor: C.card, borderRadius: 18, padding: 16 },
+  ecTop:       { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 },
+  ecIcon:      { fontSize: 24 },
+  ecDelete:    { fontSize: 14, color: C.inkDim, fontWeight: '500' },
+  ecDateRow:   { flexDirection: 'row', alignItems: 'baseline', gap: 6, marginBottom: 4 },
+  ecDate:      { fontSize: 13, color: C.inkMid, fontStyle: 'italic' },
+  ecCountdown: { fontSize: 13, color: C.ink, fontWeight: '500' },
+  ecName:      { fontSize: 16, fontWeight: '600', color: C.ink, lineHeight: 21, marginBottom: 4 },
+  ecFor:       { fontSize: 13, color: C.inkMid },
   emptyText:   { flex: 1, fontSize: 13, color: C.inkMid, textAlign: 'center', paddingVertical: 4 },
 
   // Recent points
