@@ -1,46 +1,59 @@
 -- ══════════════════════════════════════════════════════════════════
 -- Clark Cup: upcoming_events
--- Run this once in the Supabase SQL Editor.
 --
--- This table backs the "Upcoming" card and the Add Event modal on the
--- home tab. It existed only in the original Supabase project, created
--- by hand in the dashboard and never captured in SQL, so it was lost
--- when that project went away. Keeping it here so it is reproducible.
+-- Safe to run repeatedly. Every statement is idempotent, so a re-run
+-- cannot fail partway and roll back the rest -- which is what happens
+-- when a plain CREATE POLICY hits a policy that already exists, since
+-- the Supabase SQL editor runs the whole script as one transaction.
 --
--- event_date is the start date and drives ordering. end_date is NULL
--- for single-day events and set for multi-day ones (trips). date_label
--- is the display string the app renders ("June 15", "July 4-6",
--- "Jul 30 - Aug 2"), written by the client so wording stays in the
--- app's control.
+-- This table backs the "Upcoming" card on the home tab. It existed
+-- only in the original Supabase project, created by hand in the
+-- dashboard and never captured in SQL, so it was lost with it.
+--
+--   event_date  start date; drives ordering
+--   end_date    NULL for single-day events, set for trips
+--   date_label  display string ("June 15", "July 4-6", "Jul 30 - Aug 2")
+--   profile_id  who the event is for; NULL means the whole family
+--   created_by  who added it; only they can delete it
 -- ══════════════════════════════════════════════════════════════════
 
--- profile_id is who the event is for; NULL means the whole family.
 CREATE TABLE IF NOT EXISTS upcoming_events (
   id         UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   event_date DATE NOT NULL,
   end_date   DATE,
   date_label TEXT NOT NULL,
   profile_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
+  created_by UUID REFERENCES profiles(id) ON DELETE SET NULL,
   name       TEXT NOT NULL,
   icon       TEXT NOT NULL DEFAULT '📅',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CONSTRAINT end_after_start CHECK (end_date IS NULL OR end_date >= event_date)
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- If the table already exists from an earlier run, add the column:
-ALTER TABLE upcoming_events
-  ADD COLUMN IF NOT EXISTS profile_id UUID REFERENCES profiles(id) ON DELETE SET NULL;
+-- Columns, for a table created by an earlier version of this script
+ALTER TABLE upcoming_events ADD COLUMN IF NOT EXISTS end_date   DATE;
+ALTER TABLE upcoming_events ADD COLUMN IF NOT EXISTS profile_id UUID REFERENCES profiles(id) ON DELETE SET NULL;
+ALTER TABLE upcoming_events ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES profiles(id) ON DELETE SET NULL;
+
+-- An end date that precedes the start is nonsense; enforce it here too
+ALTER TABLE upcoming_events DROP CONSTRAINT IF EXISTS end_after_start;
+ALTER TABLE upcoming_events ADD  CONSTRAINT end_after_start
+  CHECK (end_date IS NULL OR end_date >= event_date);
 
 ALTER TABLE upcoming_events ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Events are viewable by all authenticated users" ON upcoming_events;
 CREATE POLICY "Events are viewable by all authenticated users"
   ON upcoming_events FOR SELECT
   USING (auth.role() = 'authenticated');
 
+DROP POLICY IF EXISTS "Authenticated users can add events" ON upcoming_events;
 CREATE POLICY "Authenticated users can add events"
   ON upcoming_events FOR INSERT
   WITH CHECK (auth.role() = 'authenticated');
 
-CREATE POLICY "Authenticated users can remove events"
+-- Replaces an earlier policy that let anyone delete anyone's event
+DROP POLICY IF EXISTS "Authenticated users can remove events" ON upcoming_events;
+DROP POLICY IF EXISTS "Users can delete events they created" ON upcoming_events;
+CREATE POLICY "Users can delete events they created"
   ON upcoming_events FOR DELETE
-  USING (auth.role() = 'authenticated');
+  USING (created_by IN (SELECT id FROM profiles WHERE auth_user_id = auth.uid()));

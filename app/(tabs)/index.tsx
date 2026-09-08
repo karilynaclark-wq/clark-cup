@@ -41,7 +41,8 @@ type UpcomingEvent = {
   date_label: string;
   name: string;
   icon: string;
-  profile_id: string | null;               // null = the whole family
+  profile_id: string | null;               // who it is for; null = the whole family
+  created_by: string | null;               // who added it; only they can delete it
   profiles?: { username: string } | null;  // joined
 };
 type FamilyMember = { id: string; username: string; total_points: number };
@@ -123,7 +124,7 @@ export default function HomeScreen() {
   const barAnim = useRef(new Animated.Value(0)).current;
 
   const fetchData = useCallback(async () => {
-    const [{ data: activity }, { data: allProfiles }, { data: eventsData }] = await Promise.all([
+    const [{ data: activity }, { data: allProfiles }, { data: eventsData, error: eventsError }] = await Promise.all([
       supabase
         .from('point_submissions')
         .select('*, profiles(username, avatar_url)')
@@ -140,6 +141,9 @@ export default function HomeScreen() {
     ]);
 
     if (activity)    setRecentActivity(activity as ActivityItem[]);
+    // A failed query left the list empty and looked identical to "no events",
+    // which made a broken schema look like lost data.
+    if (eventsError) console.error('upcoming_events fetch failed:', eventsError.message);
     if (eventsData)  setEvents(eventsData as UpcomingEvent[]);
 
     if (allProfiles) {
@@ -183,6 +187,7 @@ export default function HomeScreen() {
       end_date:   newEventEnd ? toISODate(newEventEnd) : null,
       date_label: formatEventDate(newEventDate, newEventEnd),
       profile_id: newEventFor,
+      created_by: profile?.id ?? null,
       name:       newEventName.trim(),
       icon:       newEventIcon || '📅',
     });
@@ -197,6 +202,25 @@ export default function HomeScreen() {
     setNewEventIcon('📅');
     setNewEventFor(profile?.id ?? null);
     fetchData();
+  };
+
+  const handleDeleteEvent = (ev: UpcomingEvent) => {
+    Alert.alert(
+      'Delete event?',
+      `"${ev.name}" will be removed for everyone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const { error } = await supabase.from('upcoming_events').delete().eq('id', ev.id);
+            if (error) { Alert.alert('Error', 'Could not delete that event.'); return; }
+            fetchData();
+          },
+        },
+      ],
+    );
   };
 
   const getRankLabel = (r: number) => {
@@ -314,6 +338,14 @@ export default function HomeScreen() {
                     </Text>
                   </View>
                   <Text style={styles.eIcon}>{ev.icon}</Text>
+                  {profile?.id && ev.created_by === profile.id && (
+                    <TouchableOpacity
+                      onPress={() => handleDeleteEvent(ev)}
+                      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                      accessibilityLabel={`Delete ${ev.name}`}>
+                      <Text style={styles.eDelete}>✕</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               );
             })}
@@ -524,6 +556,7 @@ const styles = StyleSheet.create({
   eName:       { fontSize: 14, fontWeight: '500', color: C.ink, lineHeight: 19 },
   eFor:        { fontSize: 12, color: C.inkMid, marginTop: 1 },
   eIcon:       { fontSize: 20, opacity: 0.85 },
+  eDelete:     { fontSize: 15, color: C.inkDim, paddingLeft: 12, fontWeight: '500' },
   emptyText:   { flex: 1, fontSize: 13, color: C.inkMid, textAlign: 'center', paddingVertical: 4 },
 
   // Recent points
