@@ -18,68 +18,78 @@ export default function PrivacyPolicyScreen() {
         <View style={{ width: 60 }} />
       </View>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <Text style={styles.updated}>Last Updated: December 2025</Text>
+        <Text style={styles.updated}>Last Updated: September 2026</Text>
 
         <Text style={styles.intro}>
-          Family Cup is a platform for families created to help members of a household share updates, track points, and participate in family activities.
+          Family Cup lets a family track a friendly points competition together. Everything you add is shared with the members of your family group and with no one else.
         </Text>
 
         <Text style={styles.heading}>Information We Collect</Text>
-        <Text style={styles.body}>We collect only the information necessary for the app to function.</Text>
+        <Text style={styles.body}>We collect only what the app needs in order to work.</Text>
 
         <Text style={styles.subheading}>Information You Provide</Text>
         <Text style={styles.body}>
-          Information you voluntarily submit through the app, such as actions taken within the app (e.g., adding points or updates) that are visible to other family members.
+          • Your email address and password, used to sign in{'\n'}
+          • Your display name{'\n'}
+          • Your mailing address and phone number, if you choose to add them — both are optional, and both are visible to your family group{'\n'}
+          • Photos you upload, including a profile picture and any photo you attach to a point submission{'\n'}
+          • The points you log and any description or notes you write with them
         </Text>
 
         <Text style={styles.subheading}>Automatically Collected Information</Text>
         <Text style={styles.body}>
           • Device information (such as device type and operating system version){'\n'}
-          • Push notification tokens (used solely to deliver app-related notifications){'\n'}
-          • Basic usage data required for app functionality and performance{'\n\n'}
-          We do not collect sensitive personal data such as contacts, photos, precise location, financial information, or health data.
+          • A push notification token, if you allow notifications, used only to deliver them{'\n\n'}
+          We do not collect your contacts, your precise location, financial information, or health data. We do not use analytics or advertising trackers.
         </Text>
 
         <Text style={styles.heading}>How We Use Information</Text>
         <Text style={styles.body}>
-          We use collected information only to:{'\n\n'}
-          • Send push notifications triggered by actions within the app{'\n'}
-          • Display shared updates to family members{'\n'}
-          • Maintain and improve the reliability and functionality of the app{'\n\n'}
-          Information is not used for advertising or marketing purposes.
+          We use what we collect only to:{'\n\n'}
+          • Show your points, photos and events to your family group{'\n'}
+          • Send the notifications you have enabled{'\n'}
+          • Keep the app working and reliable{'\n\n'}
+          We never use your information for advertising or marketing, and we never sell it.
         </Text>
 
-        <Text style={styles.heading}>Push Notifications</Text>
+        <Text style={styles.heading}>Who Can See Your Information</Text>
         <Text style={styles.body}>
-          If you enable notifications, the app may send you notifications related to app activity (such as updates or reminders). You may disable notifications at any time through your device settings.
+          Your data is visible only to members of your family group — people who joined using your family's invite code. Other families using the app cannot see your family's members, points, photos or events.{'\n\n'}
+          Anyone who has your invite code can join your family group and see what it contains, so share the code only with people you want to include.
         </Text>
 
-        <Text style={styles.heading}>Data Sharing</Text>
+        <Text style={styles.heading}>Where Your Information Is Stored</Text>
         <Text style={styles.body}>
-          This app is private and intended only for invited family members.{'\n\n'}
-          We do not sell, rent, or share personal information with third parties. Limited data may be processed by service providers necessary to operate the app (such as Apple for push notification delivery or backend hosting providers).
+          Data is stored with Supabase, which hosts our database and file storage. Push notifications are delivered through Expo and Apple. These providers process data only to operate the app on our behalf.
         </Text>
 
-        <Text style={styles.heading}>Data Security</Text>
+        <Text style={styles.heading}>Deleting Your Account</Text>
         <Text style={styles.body}>
-          We take reasonable measures to protect information used within the app. Access is limited to invited family members.
+          You can delete your account at any time from the Profile screen, under Sign Out. Deleting is permanent and immediate: it removes your profile, your photos, and every point you have logged, and those points disappear from your family's leaderboard. It cannot be undone.{'\n\n'}
+          If you would rather delete your data by request, email the address below.
+        </Text>
+
+        <Text style={styles.heading}>Data Retention</Text>
+        <Text style={styles.body}>
+          We keep your information for as long as your account exists. When you delete your account, your personal data is removed from our database at that time.
         </Text>
 
         <Text style={styles.heading}>Children's Privacy</Text>
         <Text style={styles.body}>
-          This app is intended for use within a private family context. It does not knowingly collect personal information from children outside of this private context.
+          Family Cup is meant to be used within a family, and children may take part through an account created and managed by a parent or guardian. We do not knowingly collect personal information directly from children without a parent setting up and overseeing the account.
         </Text>
 
         <Text style={styles.heading}>Changes to This Policy</Text>
         <Text style={styles.body}>
-          This Privacy Policy may be updated periodically. Updates will be reflected on this page with a revised "Last Updated" date.
+          This Privacy Policy may be updated periodically. Updates will appear on this page with a revised "Last Updated" date.
         </Text>
 
         <Text style={styles.heading}>Contact</Text>
         <Text style={styles.body}>
-          If you have questions about this Privacy Policy, please contact:{'\n\n'}
+          Questions about this policy, or requests about your data:{'\n\n'}
           karilynaclark@gmail.com
         </Text>
+
       </ScrollView>
     </SafeAreaView>
   );
