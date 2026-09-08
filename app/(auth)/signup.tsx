@@ -14,10 +14,12 @@ import {
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/context/AuthContext';
 import { COLORS } from '@/constants/Colors';
 
 export default function SignupScreen() {
   const router = useRouter();
+  const { refreshProfile } = useAuth();
   const [mode, setMode] = useState<'join' | 'create'>('join');
   const [joinCode, setJoinCode] = useState('');
   const [familyName, setFamilyName] = useState('');
@@ -129,6 +131,7 @@ export default function SignupScreen() {
       }
     }
 
+    await refreshProfile();
     setLoading(false);
     Alert.alert(
       'Welcome to Family Cup!',

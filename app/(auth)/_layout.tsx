@@ -10,6 +10,10 @@ export default function AuthLayout() {
         headerTitleStyle: { fontWeight: '700' },
         headerBackTitle: '',
       }}
-    />
+    >
+      {/* The login screen is its own full-bleed design; a nav bar showing
+          the route name on top of it just reads as a leftover. */}
+      <Stack.Screen name="login" options={{ headerShown: false }} />
+    </Stack>
   );
 }
