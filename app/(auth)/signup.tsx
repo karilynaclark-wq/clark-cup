@@ -91,7 +91,7 @@ export default function SignupScreen() {
     Alert.alert(
       'Welcome to Family Cup!',
       'Your account has been created.',
-      [{ text: "LFG!", onPress: () => router.replace('/(tabs)') }]
+      [{ text: "Let's go!", onPress: () => router.replace('/(tabs)') }]
     );
   };
 
