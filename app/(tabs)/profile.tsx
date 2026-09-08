@@ -46,6 +46,7 @@ export default function ProfileScreen() {
   const [phone,           setPhone]           = useState('');
   const [avatarUri,       setAvatarUri]       = useState<string | null>(null);
   const [saving,          setSaving]          = useState(false);
+  const [deleting,        setDeleting]        = useState(false);
   const [newPassword,     setNewPassword]     = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changingPw,      setChangingPw]      = useState(false);
@@ -119,6 +120,46 @@ export default function ProfileScreen() {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign out', style: 'destructive', onPress: signOut },
     ]);
+  };
+
+  // Two confirmations, because this is irreversible and takes the family's
+  // record of your points with it. Required by App Store guideline 5.1.1(v).
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete account?',
+      'This permanently deletes your account, your profile, and every point you have earned. It cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              'Are you sure?',
+              'Your points will be removed from the leaderboard for everyone. This is permanent.',
+              [
+                { text: 'Keep my account', style: 'cancel' },
+                {
+                  text: 'Delete forever',
+                  style: 'destructive',
+                  onPress: async () => {
+                    setDeleting(true);
+                    const { data, error } = await supabase.functions.invoke('delete-account');
+                    setDeleting(false);
+                    if (error || (data as any)?.error) {
+                      Alert.alert('Could not delete', 'Something went wrong. Please try again, or contact support.');
+                      return;
+                    }
+                    await signOut();
+                    router.replace('/(auth)/login');
+                  },
+                },
+              ],
+            );
+          },
+        },
+      ],
+    );
   };
 
   const initials = (username || 'U').split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
@@ -247,6 +288,15 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* ── DELETE ACCOUNT ───────────────────────────── */}
+          <View style={[styles.btnWrap, { paddingTop: 4, paddingBottom: 8 }]}>
+            <TouchableOpacity onPress={handleDeleteAccount} disabled={deleting} activeOpacity={0.7}>
+              <Text style={styles.deleteText}>
+                {deleting ? 'Deleting…' : 'Delete Account'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           {/* ── LEGAL FOOTER ─────────────────────────────── */}
           <View style={styles.legalRow}>
             <TouchableOpacity onPress={() => WebBrowser.openBrowserAsync(PRIVACY_URL)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -322,6 +372,7 @@ const styles = StyleSheet.create({
   outlineBtnText:{ color: C.ink, fontSize: 15, fontWeight: '600' },
   signOutBtn:    { borderRadius: 22, paddingVertical: 16, alignItems: 'center', borderWidth: 1.5, borderColor: 'rgba(212,95,46,0.25)' },
   signOutText:   { color: C.accent, fontSize: 14, fontWeight: '600', letterSpacing: 0.1 },
+  deleteText:    { color: '#b3261e', fontSize: 13, fontWeight: '500', textAlign: 'center', paddingVertical: 12 },
 
   // Legal footer
   legalRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, paddingTop: 24, paddingBottom: 4 },
