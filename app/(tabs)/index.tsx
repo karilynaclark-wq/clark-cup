@@ -36,7 +36,15 @@ const C = {
   greenBg:     'rgba(58,107,74,0.08)',
 };
 
-type UpcomingEvent = { id: string; date_label: string; name: string; icon: string };
+type UpcomingEvent = {
+  id: string;
+  date_label: string;
+  name: string;
+  icon: string;
+  profile_id: string | null;               // null = the whole family
+  profiles?: { username: string } | null;  // joined
+};
+type FamilyMember = { id: string; username: string; total_points: number };
 type ActivityItem  = PointSubmission & { profiles?: { username: string; avatar_url: string | null } };
 
 const AVATAR_COLORS = ['#d45f2e','#3a6b4a','#7a6abf','#c4743a','#5a7abf','#b45a7a'];
@@ -101,6 +109,8 @@ export default function HomeScreen() {
   const [firstPlacePts,    setFirstPlacePts]    = useState(0);
   const [refreshing,       setRefreshing]       = useState(false);
   const [events,           setEvents]           = useState<UpcomingEvent[]>([]);
+  const [family,           setFamily]           = useState<FamilyMember[]>([]);
+  const [newEventFor,      setNewEventFor]      = useState<string | null>(null);
   const [addEventModal,    setAddEventModal]    = useState(false);
   const [newEventDate,     setNewEventDate]     = useState<Date>(new Date());
   const [newEventEnd,      setNewEventEnd]      = useState<Date | null>(null);
@@ -121,11 +131,11 @@ export default function HomeScreen() {
         .limit(3),
       supabase
         .from('profiles')
-        .select('id, total_points')
+        .select('id, username, total_points')
         .order('total_points', { ascending: false }),
       supabase
         .from('upcoming_events')
-        .select('*')
+        .select('*, profiles(username)')
         .order('event_date', { ascending: true }),
     ]);
 
@@ -133,6 +143,7 @@ export default function HomeScreen() {
     if (eventsData)  setEvents(eventsData as UpcomingEvent[]);
 
     if (allProfiles) {
+      setFamily(allProfiles as FamilyMember[]);
       setFirstPlacePts(allProfiles[0]?.total_points ?? 0);
       if (profile) {
         const idx = allProfiles.findIndex((p) => p.id === profile.id);
@@ -171,6 +182,7 @@ export default function HomeScreen() {
       event_date: toISODate(newEventDate),
       end_date:   newEventEnd ? toISODate(newEventEnd) : null,
       date_label: formatEventDate(newEventDate, newEventEnd),
+      profile_id: newEventFor,
       name:       newEventName.trim(),
       icon:       newEventIcon || '📅',
     });
@@ -183,6 +195,7 @@ export default function HomeScreen() {
     setShowEndPicker(false);
     setNewEventName('');
     setNewEventIcon('📅');
+    setNewEventFor(profile?.id ?? null);
     fetchData();
   };
 
@@ -279,7 +292,7 @@ export default function HomeScreen() {
         <View style={styles.section}>
           <View style={styles.sectionLabelRow}>
             <Text style={styles.sectionLabel}>Upcoming</Text>
-            <TouchableOpacity style={styles.addBtn} onPress={() => setAddEventModal(true)}>
+            <TouchableOpacity style={styles.addBtn} onPress={() => { setNewEventFor(profile?.id ?? null); setAddEventModal(true); }}>
               <Text style={styles.addBtnText}>+ Add</Text>
             </TouchableOpacity>
           </View>
@@ -294,7 +307,12 @@ export default function HomeScreen() {
                     <Text style={[styles.eDay, isRange && styles.eDaySmall]}>{day}</Text>
                   </View>
                   <View style={[styles.ePip, hot && styles.ePipHot]} />
-                  <Text style={styles.eName}>{ev.name}</Text>
+                  <View style={styles.eTextCol}>
+                    <Text style={styles.eName}>{ev.name}</Text>
+                    <Text style={styles.eFor}>
+                      {ev.profiles?.username ? `For ${ev.profiles.username}` : 'Everyone'}
+                    </Text>
+                  </View>
                   <Text style={styles.eIcon}>{ev.icon}</Text>
                 </View>
               );
@@ -344,7 +362,7 @@ export default function HomeScreen() {
       <Modal visible={addEventModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setAddEventModal(false)}>
         <KeyboardAvoidingView style={styles.modalContainer} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => { setAddEventModal(false); setNewEventDate(new Date()); setNewEventEnd(null); setShowDatePicker(false); setShowEndPicker(false); setNewEventName(''); setNewEventIcon('📅'); }}>
+            <TouchableOpacity onPress={() => { setAddEventModal(false); setNewEventDate(new Date()); setNewEventEnd(null); setShowDatePicker(false); setShowEndPicker(false); setNewEventName(''); setNewEventIcon('📅'); setNewEventFor(profile?.id ?? null); }}>
               <Text style={styles.modalCancel}>Cancel</Text>
             </TouchableOpacity>
             <Text style={styles.modalTitle}>Add Event</Text>
@@ -412,6 +430,23 @@ export default function HomeScreen() {
               </>
             )}
 
+            <Text style={styles.formLabel}>Who is it for?</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+              <TouchableOpacity
+                style={[styles.chip, newEventFor === null && styles.chipOn]}
+                onPress={() => setNewEventFor(null)}>
+                <Text style={[styles.chipText, newEventFor === null && styles.chipTextOn]}>Everyone</Text>
+              </TouchableOpacity>
+              {family.map((m) => (
+                <TouchableOpacity
+                  key={m.id}
+                  style={[styles.chip, newEventFor === m.id && styles.chipOn]}
+                  onPress={() => setNewEventFor(m.id)}>
+                  <Text style={[styles.chipText, newEventFor === m.id && styles.chipTextOn]}>{m.username}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
             <Text style={styles.formLabel}>Event Name</Text>
             <TextInput style={styles.input} value={newEventName} onChangeText={setNewEventName}
               placeholder="e.g. Kyle's Birthday!" placeholderTextColor={C.inkDim} />
@@ -438,7 +473,8 @@ const styles = StyleSheet.create({
   logoText:     { fontSize: 15, fontWeight: '600', color: C.ink, letterSpacing: -0.2 },
   headerYear:   { fontSize: 13, fontWeight: '500', color: C.inkMid },
   greetingSmall:{ fontSize: 13, fontWeight: '500', color: C.inkMid, marginBottom: 2 },
-  greetingName: { fontSize: 64, fontWeight: '400', lineHeight: 58, letterSpacing: -2, color: C.ink, fontStyle: 'italic', marginBottom: 8 },
+  // lineHeight must be >= fontSize or iOS clips the tops of tall letters
+  greetingName: { fontSize: 64, fontWeight: '400', lineHeight: 72, letterSpacing: -2, color: C.ink, fontStyle: 'italic', marginBottom: 4 },
 
   // Rank pill
   rankPill:     { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.card, borderRadius: 18, paddingHorizontal: 16, paddingVertical: 12, alignSelf: 'flex-start', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 3, marginTop: 18 },
@@ -484,7 +520,9 @@ const styles = StyleSheet.create({
   eDaySmall:   { fontSize: 17, lineHeight: 22 },
   ePip:        { width: 7, height: 7, borderRadius: 4, backgroundColor: C.borderMd, flexShrink: 0 },
   ePipHot:     { backgroundColor: C.accent },
-  eName:       { flex: 1, fontSize: 14, fontWeight: '500', color: C.ink, lineHeight: 19 },
+  eTextCol:    { flex: 1 },
+  eName:       { fontSize: 14, fontWeight: '500', color: C.ink, lineHeight: 19 },
+  eFor:        { fontSize: 12, color: C.inkMid, marginTop: 1 },
   eIcon:       { fontSize: 20, opacity: 0.85 },
   emptyText:   { flex: 1, fontSize: 13, color: C.inkMid, textAlign: 'center', paddingVertical: 4 },
 
@@ -510,4 +548,9 @@ const styles = StyleSheet.create({
   dateValue:      { fontSize: 16, color: C.ink },
   switchRow:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18 },
   datePreview:    { fontSize: 13, color: C.inkMid, marginTop: 8, fontStyle: 'italic' },
+  chipRow:        { gap: 8, paddingVertical: 2, paddingRight: 8 },
+  chip:           { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999, backgroundColor: '#f5f0e8', borderWidth: 1, borderColor: 'rgba(28,26,22,0.1)' },
+  chipOn:         { backgroundColor: C.green, borderColor: C.green },
+  chipText:       { fontSize: 14, fontWeight: '500', color: C.ink },
+  chipTextOn:     { color: '#ffffff' },
 });

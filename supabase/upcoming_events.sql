@@ -14,16 +14,22 @@
 -- app's control.
 -- ══════════════════════════════════════════════════════════════════
 
+-- profile_id is who the event is for; NULL means the whole family.
 CREATE TABLE IF NOT EXISTS upcoming_events (
   id         UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   event_date DATE NOT NULL,
   end_date   DATE,
   date_label TEXT NOT NULL,
+  profile_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
   name       TEXT NOT NULL,
   icon       TEXT NOT NULL DEFAULT '📅',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT end_after_start CHECK (end_date IS NULL OR end_date >= event_date)
 );
+
+-- If the table already exists from an earlier run, add the column:
+ALTER TABLE upcoming_events
+  ADD COLUMN IF NOT EXISTS profile_id UUID REFERENCES profiles(id) ON DELETE SET NULL;
 
 ALTER TABLE upcoming_events ENABLE ROW LEVEL SECURITY;
 
