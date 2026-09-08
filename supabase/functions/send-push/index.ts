@@ -8,12 +8,23 @@
 //   events  — daily:       upcoming events that start tomorrow
 //   sunday  — Sundays:     30 min before the 11:00 AM Chicago family call
 //
-// Everyone with a saved push token gets every notification.
+// Everyone with a saved push token gets every notification. Copy is built
+// per recipient, so the Sunday reminder can greet each person by name.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 const CHICAGO = 'America/Chicago';
+
+// Falls back to a readable phrase when a submission has no custom_name.
+const CATEGORY_PHRASE: Record<string, string> = {
+  sunday_call:   'the Sunday call',
+  weekly_photo:  'the photo contest',
+  miscellaneous: 'being awesome',
+};
+
+type Recipient = { token: string; username: string };
+type Message   = { title: string; body: string };
 
 // Wall-clock parts in Chicago, whatever the server's own clock says.
 function chicagoNow() {
@@ -38,13 +49,19 @@ function addDays(isoDate: string, days: number) {
   return d.toISOString().slice(0, 10);
 }
 
+function joinNames(names: string[]) {
+  if (names.length <= 1) return names[0] ?? '';
+  return `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+}
+
+// build() runs per recipient so copy can use their own name.
 // Expo accepts at most 100 messages per request.
-async function pushToAll(tokens: string[], title: string, body: string) {
-  if (tokens.length === 0) return { sent: 0 };
+async function pushEach(recipients: Recipient[], build: (r: Recipient) => Message) {
+  if (recipients.length === 0) return { sent: 0 };
   let sent = 0;
-  for (let i = 0; i < tokens.length; i += 100) {
-    const batch = tokens.slice(i, i + 100).map((to) => ({
-      to, title, body, sound: 'default',
+  for (let i = 0; i < recipients.length; i += 100) {
+    const batch = recipients.slice(i, i + 100).map((r) => ({
+      to: r.token, sound: 'default', ...build(r),
     }));
     const res = await fetch(EXPO_PUSH_URL, {
       method: 'POST',
@@ -75,32 +92,38 @@ Deno.serve(async (req) => {
   // Everyone who has opened the app and granted permission.
   const { data: people, error: peopleErr } = await supabase
     .from('profiles')
-    .select('push_token')
+    .select('username, push_token')
     .not('push_token', 'is', null);
   if (peopleErr) return Response.json({ error: peopleErr.message }, { status: 500 });
 
-  const tokens = (people ?? []).map((p) => p.push_token as string).filter(Boolean);
+  const recipients: Recipient[] = (people ?? [])
+    .filter((p) => p.push_token)
+    .map((p) => ({ token: p.push_token as string, username: p.username as string }));
 
   if (job === 'points') {
     // Everything logged since the last run, so a flurry of entries becomes one buzz.
     const { data: fresh, error } = await supabase
       .from('point_submissions')
-      .select('id, points, profiles!user_id(username)')
+      .select('id, points, category, custom_name, profiles!user_id(username)')
       .is('notified_at', null);
     if (error) return Response.json({ error: error.message }, { status: 500 });
     if (!fresh || fresh.length === 0) return Response.json({ skipped: 'nothing new' });
 
-    const names = [...new Set(fresh.map((s: any) => s.profiles?.username).filter(Boolean))];
-    const total = fresh.reduce((sum: number, s: any) => sum + (s.points ?? 0), 0);
+    const describe = (s: any) =>
+      s.custom_name?.trim() || CATEGORY_PHRASE[s.category] || 'being awesome';
+    const line = (s: any) =>
+      `${s.profiles?.username ?? 'Someone'} just got ${s.points} points for ${describe(s)}`;
 
-    const body =
-      fresh.length === 1
-        ? `${names[0]} just earned ${total} points.`
-        : names.length === 1
-          ? `${names[0]} just earned ${total} points across ${fresh.length} entries.`
-          : `${names.slice(0, -1).join(', ')} and ${names.at(-1)} earned ${total} points.`;
+    let body: string;
+    if (fresh.length === 1) {
+      body = `${line(fresh[0])}!`;
+    } else {
+      const shown = fresh.slice(0, 3).map(line).join(' · ');
+      const rest  = fresh.length - 3;
+      body = rest > 0 ? `${shown} · and ${rest} more` : shown;
+    }
 
-    const result = await pushToAll(tokens, '🏆 New points', body);
+    const result = await pushEach(recipients, () => ({ title: '🏆 New points', body }));
 
     // Mark them announced only after the send succeeded, so a failure retries.
     await supabase
@@ -108,7 +131,7 @@ Deno.serve(async (req) => {
       .update({ notified_at: new Date().toISOString() })
       .in('id', fresh.map((s: any) => s.id));
 
-    return Response.json({ job, entries: fresh.length, ...result });
+    return Response.json({ job, entries: fresh.length, preview: body, ...result });
   }
 
   if (job === 'events') {
@@ -120,13 +143,22 @@ Deno.serve(async (req) => {
     if (error) return Response.json({ error: error.message }, { status: 500 });
     if (!events || events.length === 0) return Response.json({ skipped: 'nothing tomorrow' });
 
-    const body =
-      events.length === 1
-        ? `${events[0].icon ?? '✈️'} ${events[0].name} starts tomorrow.`
-        : `${events.length} things start tomorrow: ${events.map((e: any) => e.name).join(', ')}.`;
+    let message: Message;
+    if (events.length === 1) {
+      const e   = events[0] as any;
+      const who = e.profiles?.username;
+      message = who
+        ? { title: `Have fun, ${who}!`, body: `${e.name} is tomorrow for ${who}!` }
+        : { title: 'Have fun, everyone!', body: `${e.name} is tomorrow!` };
+    } else {
+      message = {
+        title: 'Have fun, everyone!',
+        body: `Tomorrow: ${joinNames((events as any[]).map((e) => e.name))}!`,
+      };
+    }
 
-    const result = await pushToAll(tokens, 'Tomorrow', body);
-    return Response.json({ job, events: events.length, ...result });
+    const result = await pushEach(recipients, () => message);
+    return Response.json({ job, events: events.length, preview: message, ...result });
   }
 
   if (job === 'sunday') {
@@ -136,11 +168,10 @@ Deno.serve(async (req) => {
     if (now.weekday !== 'Sun' || now.hour !== 10 || now.minute >= 45) {
       return Response.json({ skipped: `not 10:30 Sunday in Chicago (${now.weekday} ${now.hour}:${now.minute})` });
     }
-    const result = await pushToAll(
-      tokens,
-      '📞 Sunday call',
-      'Family call in 30 minutes — worth 50 points.',
-    );
+    const result = await pushEach(recipients, (r) => ({
+      title: `Happy Sunday, ${r.username}!`,
+      body:  'The family call is in 30 minutes — talk soon.',
+    }));
     return Response.json({ job, ...result });
   }
 
