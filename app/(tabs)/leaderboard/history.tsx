@@ -1,19 +1,35 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useRouter } from 'expo-router';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { COLORS } from '@/constants/Colors';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/context/AuthContext';
 
-const WINNERS = [
-  { year: '2025', winner: 'Mom',  note: 'Reigning champion 👑' },
-  { year: '2024', winner: 'Kari', note: '' },
-  { year: '2023', winner: 'Kris', note: '' },
-  { year: '2022', winner: 'Kyle', note: '' },
-];
+type Champion = { year: string; winner: string; note?: string };
 
 export default function HistoryScreen() {
   const router = useRouter();
+  const { profile } = useAuth();
+  const [winners, setWinners] = useState<Champion[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Each family keeps its own champions; this used to be a hardcoded
+  // array, so every family saw the Clarks' winners.
+  useEffect(() => {
+    if (!profile?.family_id) { setLoading(false); return; }
+    supabase
+      .from('families')
+      .select('champions')
+      .eq('id', profile.family_id)
+      .maybeSingle()
+      .then(({ data }) => {
+        const list = (data as any)?.champions;
+        if (Array.isArray(list)) setWinners(list as Champion[]);
+        setLoading(false);
+      });
+  }, [profile?.family_id]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -44,7 +60,18 @@ export default function HistoryScreen() {
           <Text style={styles.trophySubtitle}>Glory to the victor.</Text>
         </View>
 
-        {WINNERS.map((entry, i) => (
+        {loading && <ActivityIndicator style={{ marginTop: 24 }} color={COLORS.primary} />}
+
+        {!loading && winners.length === 0 && (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyTitle}>No champions yet</Text>
+            <Text style={styles.emptyBody}>
+              When your family finishes its first cup, the winner will be recorded here.
+            </Text>
+          </View>
+        )}
+
+        {winners.map((entry, i) => (
           <View key={entry.year} style={[styles.card, i === 0 && styles.cardFirst]}>
             <View style={styles.cardLeft}>
               <Text style={styles.medal}>🥇</Text>
@@ -97,6 +124,16 @@ const styles = StyleSheet.create({
     borderColor: COLORS.gold,
     borderWidth: 2,
   },
+  emptyCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 14,
+    padding: 24,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: COLORS.text, marginBottom: 6 },
+  emptyBody:  { fontSize: 13, color: COLORS.primaryMuted, textAlign: 'center', lineHeight: 19 },
   cardLeft: { marginRight: 14 },
   medal: { fontSize: 32 },
   cardBody: { flex: 1 },
