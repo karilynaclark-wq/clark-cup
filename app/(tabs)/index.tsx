@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,8 +11,6 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  Animated,
-  Dimensions,
   Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -49,6 +47,10 @@ type FamilyMember = { id: string; username: string; total_points: number };
 type ActivityItem  = PointSubmission & { profiles?: { username: string; avatar_url: string | null } };
 
 const AVATAR_COLORS = ['#d45f2e','#3a6b4a','#7a6abf','#c4743a','#5a7abf','#b45a7a'];
+
+// The five family members, in the order the chips should read. Anyone
+// not listed here (a test account, say) is left out of the picker.
+const FAMILY_ORDER = ['Mom', 'Kelly', 'Kris', 'Kari', 'Kyle'];
 
 const fmtLong  = (d: Date) => d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
 const fmtShort = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -100,14 +102,9 @@ const CATEGORY_LABELS: Record<string, string> = {
   miscellaneous:'Miscellaneous',
 };
 
-const { width: SCREEN_W } = Dimensions.get('window');
-const BAR_W = SCREEN_W - 40 - 40; // screen - horizontal padding - card padding
-
 export default function HomeScreen() {
   const { profile } = useAuth();
   const [recentActivity,   setRecentActivity]   = useState<ActivityItem[]>([]);
-  const [rank,             setRank]             = useState<number | null>(null);
-  const [firstPlacePts,    setFirstPlacePts]    = useState(0);
   const [refreshing,       setRefreshing]       = useState(false);
   const [events,           setEvents]           = useState<UpcomingEvent[]>([]);
   const [family,           setFamily]           = useState<FamilyMember[]>([]);
@@ -120,8 +117,6 @@ export default function HomeScreen() {
   const [newEventName,     setNewEventName]     = useState('');
   const [newEventIcon,     setNewEventIcon]     = useState('📅');
   const [savingEvent,      setSavingEvent]      = useState(false);
-
-  const barAnim = useRef(new Animated.Value(0)).current;
 
   const fetchData = useCallback(async () => {
     const [{ data: activity }, { data: allProfiles }, { data: eventsData, error: eventsError }] = await Promise.all([
@@ -150,33 +145,21 @@ export default function HomeScreen() {
 
     if (allProfiles) {
       setFamily(allProfiles as FamilyMember[]);
-      setFirstPlacePts(allProfiles[0]?.total_points ?? 0);
-      if (profile) {
-        const idx = allProfiles.findIndex((p) => p.id === profile.id);
-        setRank(idx >= 0 ? idx + 1 : null);
-      }
     }
   }, [profile]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
-
-  // Animate progress bar whenever points/firstPlace change
-  useEffect(() => {
-    const myPts = profile?.total_points ?? 0;
-    const pct   = firstPlacePts > 0 ? Math.min(myPts / firstPlacePts, 1) : 0;
-    barAnim.setValue(0);
-    Animated.timing(barAnim, {
-      toValue: pct,
-      duration: 1000,
-      useNativeDriver: false,
-    }).start();
-  }, [profile?.total_points, firstPlacePts]);
 
   const onRefresh = async () => {
     setRefreshing(true);
     await fetchData();
     setRefreshing(false);
   };
+
+  // Preselect the signed-in member, unless they are not one of the five
+  // (a test account), in which case start on Everyone.
+  const defaultEventFor = () =>
+    profile && FAMILY_ORDER.includes(profile.username) ? profile.id : null;
 
   const handleAddEvent = async () => {
     if (!newEventName.trim()) {
@@ -202,7 +185,7 @@ export default function HomeScreen() {
     setShowEndPicker(false);
     setNewEventName('');
     setNewEventIcon('📅');
-    setNewEventFor(profile?.id ?? null);
+    setNewEventFor(defaultEventFor());
     fetchData();
   };
 
@@ -225,21 +208,11 @@ export default function HomeScreen() {
     );
   };
 
-  const getRankLabel = (r: number) => {
-    if (r === 1) return { emoji: '🥇', label: '1st place' };
-    if (r === 2) return { emoji: '🥈', label: '2nd place' };
-    if (r === 3) return { emoji: '🥉', label: '3rd place' };
-    return { emoji: '🏅', label: `${r}th place` };
-  };
 
-  const myPts    = profile?.total_points ?? 0;
-  const gapToFirst = Math.max(firstPlacePts - myPts, 0);
-  const rankInfo = rank !== null ? getRankLabel(rank) : null;
-
-  const barWidth = barAnim.interpolate({
-    inputRange:  [0, 1],
-    outputRange: ['0%', '100%'],
-  });
+  // Only the five family members, in FAMILY_ORDER order
+  const familyChips = FAMILY_ORDER
+    .map((n) => family.find((m) => m.username === n))
+    .filter((m): m is FamilyMember => Boolean(m));
 
   const formatDate = (iso: string) =>
     new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -265,60 +238,13 @@ export default function HomeScreen() {
 
           <Text style={styles.greetingSmall}>Welcome back</Text>
           <Text style={styles.greetingName}>{profile?.username ?? '—'}.</Text>
-
-          {rankInfo && (
-            <View style={styles.rankPill}>
-              <Text style={styles.rankMedal}>{rankInfo.emoji}</Text>
-              <Text style={styles.rankLabel}>{rankInfo.label}</Text>
-              <View style={styles.rankSep} />
-              <Text style={styles.rankPts}>{myPts.toLocaleString()}</Text>
-              <Text style={styles.rankPtsLabel}> pts</Text>
-            </View>
-          )}
-        </View>
-
-        {/* ── PROGRESS BAR ───────────────────────────────── */}
-        {rank !== null && rank > 1 && (
-          <View style={styles.progressWrap}>
-            <View style={styles.progressCard}>
-              <Text style={styles.progressText}>{gapToFirst.toLocaleString()} pts from 1st place</Text>
-              <View style={styles.track}>
-                <Animated.View style={[styles.fill, { width: barWidth }]}>
-                  <View style={styles.fillDot} />
-                </Animated.View>
-              </View>
-            </View>
-          </View>
-        )}
-
-        {/* ── REMINDERS ──────────────────────────────────── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Weekly Reminders</Text>
-          <View style={styles.remindersRow}>
-            <View style={styles.reminderCard}>
-              <View style={styles.rTop}>
-                <Text style={styles.rEmoji}>📞</Text>
-                <View style={styles.rPtsBadge}><Text style={styles.rPtsText}>+50 pts</Text></View>
-              </View>
-              <Text style={styles.rName}>Sunday Call</Text>
-              <Text style={styles.rFreq}>Every Sunday</Text>
-            </View>
-            <View style={styles.reminderCard}>
-              <View style={styles.rTop}>
-                <Text style={styles.rEmoji}>📸</Text>
-                <View style={styles.rPtsBadge}><Text style={styles.rPtsText}>+100 pts</Text></View>
-              </View>
-              <Text style={styles.rName}>Photo Contest</Text>
-              <Text style={styles.rFreq}>Every week</Text>
-            </View>
-          </View>
         </View>
 
         {/* ── UPCOMING ───────────────────────────────────── */}
         <View style={styles.section}>
           <View style={styles.sectionLabelRow}>
             <Text style={styles.sectionLabel}>Upcoming</Text>
-            <TouchableOpacity style={styles.addBtn} onPress={() => { setNewEventFor(profile?.id ?? null); setAddEventModal(true); }}>
+            <TouchableOpacity style={styles.addBtn} onPress={() => { setNewEventFor(defaultEventFor()); setAddEventModal(true); }}>
               <Text style={styles.addBtnText}>+ Add</Text>
             </TouchableOpacity>
           </View>
@@ -359,6 +285,29 @@ export default function HomeScreen() {
           </View>
         </View>
 
+        {/* ── REMINDERS ──────────────────────────────────── */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Weekly Reminders</Text>
+          <View style={styles.remindersRow}>
+            <View style={styles.reminderCard}>
+              <View style={styles.rTop}>
+                <Text style={styles.rEmoji}>📞</Text>
+                <View style={styles.rPtsBadge}><Text style={styles.rPtsText}>+50 pts</Text></View>
+              </View>
+              <Text style={styles.rName}>Sunday Call</Text>
+              <Text style={styles.rFreq}>Every Sunday</Text>
+            </View>
+            <View style={styles.reminderCard}>
+              <View style={styles.rTop}>
+                <Text style={styles.rEmoji}>📸</Text>
+                <View style={styles.rPtsBadge}><Text style={styles.rPtsText}>+100 pts</Text></View>
+              </View>
+              <Text style={styles.rName}>Photo Contest</Text>
+              <Text style={styles.rFreq}>Every week</Text>
+            </View>
+          </View>
+        </View>
+
         {/* ── RECENT POINTS ──────────────────────────────── */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Recent Points</Text>
@@ -396,7 +345,7 @@ export default function HomeScreen() {
       <Modal visible={addEventModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setAddEventModal(false)}>
         <KeyboardAvoidingView style={styles.modalContainer} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => { setAddEventModal(false); setNewEventDate(new Date()); setNewEventEnd(null); setShowDatePicker(false); setShowEndPicker(false); setNewEventName(''); setNewEventIcon('📅'); setNewEventFor(profile?.id ?? null); }}>
+            <TouchableOpacity onPress={() => { setAddEventModal(false); setNewEventDate(new Date()); setNewEventEnd(null); setShowDatePicker(false); setShowEndPicker(false); setNewEventName(''); setNewEventIcon('📅'); setNewEventFor(defaultEventFor()); }}>
               <Text style={styles.modalCancel}>Cancel</Text>
             </TouchableOpacity>
             <Text style={styles.modalTitle}>Add Event</Text>
@@ -465,13 +414,8 @@ export default function HomeScreen() {
             )}
 
             <Text style={styles.formLabel}>Who is it for?</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-              <TouchableOpacity
-                style={[styles.chip, newEventFor === null && styles.chipOn]}
-                onPress={() => setNewEventFor(null)}>
-                <Text style={[styles.chipText, newEventFor === null && styles.chipTextOn]}>Everyone</Text>
-              </TouchableOpacity>
-              {family.map((m) => (
+            <View style={styles.chipRow}>
+              {familyChips.map((m) => (
                 <TouchableOpacity
                   key={m.id}
                   style={[styles.chip, newEventFor === m.id && styles.chipOn]}
@@ -479,7 +423,12 @@ export default function HomeScreen() {
                   <Text style={[styles.chipText, newEventFor === m.id && styles.chipTextOn]}>{m.username}</Text>
                 </TouchableOpacity>
               ))}
-            </ScrollView>
+              <TouchableOpacity
+                style={[styles.chip, newEventFor === null && styles.chipOn]}
+                onPress={() => setNewEventFor(null)}>
+                <Text style={[styles.chipText, newEventFor === null && styles.chipTextOn]}>Everyone</Text>
+              </TouchableOpacity>
+            </View>
 
             <Text style={styles.formLabel}>Event Name</Text>
             <TextInput style={styles.input} value={newEventName} onChangeText={setNewEventName}
@@ -510,21 +459,9 @@ const styles = StyleSheet.create({
   // lineHeight must be >= fontSize or iOS clips the tops of tall letters
   greetingName: { fontSize: 64, fontWeight: '400', lineHeight: 72, letterSpacing: -2, color: C.ink, fontStyle: 'italic', marginBottom: 4 },
 
-  // Rank pill
-  rankPill:     { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.card, borderRadius: 18, paddingHorizontal: 16, paddingVertical: 12, alignSelf: 'flex-start', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 3, marginTop: 18 },
-  rankMedal:    { fontSize: 18 },
-  rankLabel:    { fontSize: 14, fontWeight: '600', color: C.ink },
-  rankSep:      { width: 1, height: 16, backgroundColor: C.borderMd, marginHorizontal: 4 },
-  rankPts:      { fontSize: 18, color: C.ink, letterSpacing: -0.5, fontStyle: 'italic' },
-  rankPtsLabel: { fontSize: 12, color: C.inkMid, fontWeight: '500' },
+  // Rank pill shadowOpacity: 0.06, shadowRadius: 12, elevation: 3, marginTop: 18 },
 
-  // Progress
-  progressWrap: { paddingHorizontal: 20, marginTop: 4, marginBottom: 4 },
-  progressCard: { backgroundColor: C.card, borderRadius: 22, padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 3 },
-  progressText: { fontSize: 12, fontWeight: '500', color: C.inkMid, marginBottom: 12 },
-  track:        { height: 6, backgroundColor: 'rgba(28,26,22,0.07)', borderRadius: 99, overflow: 'visible', position: 'relative' },
-  fill:         { height: '100%', backgroundColor: C.accent, borderRadius: 99, position: 'relative' },
-  fillDot:      { position: 'absolute', right: -8, top: -5, width: 16, height: 16, backgroundColor: C.accent, borderWidth: 3, borderColor: C.card, borderRadius: 8, shadowColor: C.accent, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.4, shadowRadius: 4 },
+  // Progress shadowOpacity: 0.06, shadowRadius: 12, elevation: 3 }, shadowOpacity: 0.4, shadowRadius: 4 },
 
   // Sections
   section:         { paddingHorizontal: 20, paddingTop: 20 },
@@ -583,7 +520,7 @@ const styles = StyleSheet.create({
   dateValue:      { fontSize: 16, color: C.ink },
   switchRow:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18 },
   datePreview:    { fontSize: 13, color: C.inkMid, marginTop: 8, fontStyle: 'italic' },
-  chipRow:        { gap: 8, paddingVertical: 2, paddingRight: 8 },
+  chipRow:        { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingVertical: 2 },
   chip:           { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999, backgroundColor: '#f5f0e8', borderWidth: 1, borderColor: 'rgba(28,26,22,0.1)' },
   chipOn:         { backgroundColor: C.green, borderColor: C.green },
   chipText:       { fontSize: 14, fontWeight: '500', color: C.ink },
