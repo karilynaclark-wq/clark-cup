@@ -43,7 +43,8 @@
           "photosPermission": "Clark Cup uses your photo library to attach photos to submissions and update your profile picture."
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true

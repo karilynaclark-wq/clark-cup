@@ -15,6 +15,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { StatusBar } from 'expo-status-bar';
 import { useAuth } from '@/context/AuthContext';
 import { supabase, PointSubmission } from '@/lib/supabase';
@@ -38,6 +39,14 @@ type UpcomingEvent = { id: string; date_label: string; name: string; icon: strin
 type ActivityItem  = PointSubmission & { profiles?: { username: string; avatar_url: string | null } };
 
 const AVATAR_COLORS = ['#d45f2e','#3a6b4a','#7a6abf','#c4743a','#5a7abf','#b45a7a'];
+
+// "June 15" — what the events list shows
+const formatEventDate = (d: Date) =>
+  d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+
+// "2026-06-15" in local time, for sorting (toISOString would shift the day)
+const toISODate = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 function avatarColor(name: string) {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffffffff;
@@ -80,7 +89,8 @@ export default function HomeScreen() {
   const [refreshing,       setRefreshing]       = useState(false);
   const [events,           setEvents]           = useState<UpcomingEvent[]>([]);
   const [addEventModal,    setAddEventModal]    = useState(false);
-  const [newEventDate,     setNewEventDate]     = useState('');
+  const [newEventDate,     setNewEventDate]     = useState<Date>(new Date());
+  const [showDatePicker,   setShowDatePicker]   = useState(false);
   const [newEventName,     setNewEventName]     = useState('');
   const [newEventIcon,     setNewEventIcon]     = useState('📅');
   const [savingEvent,      setSavingEvent]      = useState(false);
@@ -101,7 +111,7 @@ export default function HomeScreen() {
       supabase
         .from('upcoming_events')
         .select('*')
-        .order('created_at', { ascending: true }),
+        .order('event_date', { ascending: true }),
     ]);
 
     if (activity)    setRecentActivity(activity as ActivityItem[]);
@@ -137,20 +147,22 @@ export default function HomeScreen() {
   };
 
   const handleAddEvent = async () => {
-    if (!newEventDate.trim() || !newEventName.trim()) {
-      Alert.alert('Missing info', 'Please enter both a date and event name.');
+    if (!newEventName.trim()) {
+      Alert.alert('Missing info', 'Please enter an event name.');
       return;
     }
     setSavingEvent(true);
     const { error } = await supabase.from('upcoming_events').insert({
-      date_label: newEventDate.trim(),
+      event_date: toISODate(newEventDate),
+      date_label: formatEventDate(newEventDate),
       name:       newEventName.trim(),
       icon:       newEventIcon || '📅',
     });
     setSavingEvent(false);
     if (error) { Alert.alert('Error', 'Could not save event.'); return; }
     setAddEventModal(false);
-    setNewEventDate('');
+    setNewEventDate(new Date());
+    setShowDatePicker(false);
     setNewEventName('');
     setNewEventIcon('📅');
     fetchData();
@@ -314,7 +326,7 @@ export default function HomeScreen() {
       <Modal visible={addEventModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setAddEventModal(false)}>
         <KeyboardAvoidingView style={styles.modalContainer} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => { setAddEventModal(false); setNewEventDate(''); setNewEventName(''); setNewEventIcon('📅'); }}>
+            <TouchableOpacity onPress={() => { setAddEventModal(false); setNewEventDate(new Date()); setShowDatePicker(false); setNewEventName(''); setNewEventIcon('📅'); }}>
               <Text style={styles.modalCancel}>Cancel</Text>
             </TouchableOpacity>
             <Text style={styles.modalTitle}>Add Event</Text>
@@ -324,8 +336,20 @@ export default function HomeScreen() {
           </View>
           <ScrollView contentContainerStyle={styles.modalScroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
             <Text style={styles.formLabel}>Date</Text>
-            <TextInput style={styles.input} value={newEventDate} onChangeText={setNewEventDate}
-              placeholder="e.g. June 15 or July 4–6" placeholderTextColor={C.inkDim} />
+            <TouchableOpacity style={styles.input} onPress={() => setShowDatePicker(v => !v)}>
+              <Text style={styles.dateValue}>{formatEventDate(newEventDate)}</Text>
+            </TouchableOpacity>
+            {showDatePicker && (
+              <DateTimePicker
+                value={newEventDate}
+                mode="date"
+                display="inline"
+                onChange={(_, picked) => {
+                  if (Platform.OS !== 'ios') setShowDatePicker(false);
+                  if (picked) setNewEventDate(picked);
+                }}
+              />
+            )}
             <Text style={styles.formLabel}>Event Name</Text>
             <TextInput style={styles.input} value={newEventName} onChangeText={setNewEventName}
               placeholder="e.g. Kyle's Birthday!" placeholderTextColor={C.inkDim} />
@@ -421,4 +445,5 @@ const styles = StyleSheet.create({
   modalScroll:    { padding: 20, paddingBottom: 40 },
   formLabel:      { fontSize: 11, fontWeight: '600', color: C.inkDim, marginBottom: 8, marginTop: 20, textTransform: 'uppercase', letterSpacing: 0.8 },
   input:          { backgroundColor: '#f5f0e8', borderRadius: 12, padding: 14, fontSize: 16, color: C.ink, borderWidth: 1, borderColor: 'rgba(28,26,22,0.1)' },
+  dateValue:      { fontSize: 16, color: C.ink },
 });
