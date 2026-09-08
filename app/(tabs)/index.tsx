@@ -13,6 +13,7 @@ import {
   Platform,
   Animated,
   Dimensions,
+  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -40,9 +41,21 @@ type ActivityItem  = PointSubmission & { profiles?: { username: string; avatar_u
 
 const AVATAR_COLORS = ['#d45f2e','#3a6b4a','#7a6abf','#c4743a','#5a7abf','#b45a7a'];
 
-// "June 15" — what the events list shows
-const formatEventDate = (d: Date) =>
-  d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+const fmtLong  = (d: Date) => d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+const fmtShort = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+// What the events list shows:
+//   single day      → "June 15"
+//   same month      → "July 4–6"
+//   spanning months → "Jul 30 – Aug 2"
+const formatEventDate = (start: Date, end: Date | null) => {
+  if (!end) return fmtLong(start);
+  const sameMonth = start.getMonth() === end.getMonth()
+    && start.getFullYear() === end.getFullYear();
+  return sameMonth
+    ? `${fmtLong(start)}–${end.getDate()}`
+    : `${fmtShort(start)} – ${fmtShort(end)}`;
+};
 
 // "2026-06-15" in local time, for sorting (toISOString would shift the day)
 const toISODate = (d: Date) =>
@@ -90,7 +103,9 @@ export default function HomeScreen() {
   const [events,           setEvents]           = useState<UpcomingEvent[]>([]);
   const [addEventModal,    setAddEventModal]    = useState(false);
   const [newEventDate,     setNewEventDate]     = useState<Date>(new Date());
+  const [newEventEnd,      setNewEventEnd]      = useState<Date | null>(null);
   const [showDatePicker,   setShowDatePicker]   = useState(false);
+  const [showEndPicker,    setShowEndPicker]    = useState(false);
   const [newEventName,     setNewEventName]     = useState('');
   const [newEventIcon,     setNewEventIcon]     = useState('📅');
   const [savingEvent,      setSavingEvent]      = useState(false);
@@ -154,7 +169,8 @@ export default function HomeScreen() {
     setSavingEvent(true);
     const { error } = await supabase.from('upcoming_events').insert({
       event_date: toISODate(newEventDate),
-      date_label: formatEventDate(newEventDate),
+      end_date:   newEventEnd ? toISODate(newEventEnd) : null,
+      date_label: formatEventDate(newEventDate, newEventEnd),
       name:       newEventName.trim(),
       icon:       newEventIcon || '📅',
     });
@@ -162,7 +178,9 @@ export default function HomeScreen() {
     if (error) { Alert.alert('Error', 'Could not save event.'); return; }
     setAddEventModal(false);
     setNewEventDate(new Date());
+    setNewEventEnd(null);
     setShowDatePicker(false);
+    setShowEndPicker(false);
     setNewEventName('');
     setNewEventIcon('📅');
     fetchData();
@@ -326,7 +344,7 @@ export default function HomeScreen() {
       <Modal visible={addEventModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setAddEventModal(false)}>
         <KeyboardAvoidingView style={styles.modalContainer} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => { setAddEventModal(false); setNewEventDate(new Date()); setShowDatePicker(false); setNewEventName(''); setNewEventIcon('📅'); }}>
+            <TouchableOpacity onPress={() => { setAddEventModal(false); setNewEventDate(new Date()); setNewEventEnd(null); setShowDatePicker(false); setShowEndPicker(false); setNewEventName(''); setNewEventIcon('📅'); }}>
               <Text style={styles.modalCancel}>Cancel</Text>
             </TouchableOpacity>
             <Text style={styles.modalTitle}>Add Event</Text>
@@ -335,9 +353,9 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={styles.modalScroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
-            <Text style={styles.formLabel}>Date</Text>
-            <TouchableOpacity style={styles.input} onPress={() => setShowDatePicker(v => !v)}>
-              <Text style={styles.dateValue}>{formatEventDate(newEventDate)}</Text>
+            <Text style={styles.formLabel}>{newEventEnd ? 'Starts' : 'Date'}</Text>
+            <TouchableOpacity style={styles.input} onPress={() => { setShowDatePicker(v => !v); setShowEndPicker(false); }}>
+              <Text style={styles.dateValue}>{fmtLong(newEventDate)}</Text>
             </TouchableOpacity>
             {showDatePicker && (
               <DateTimePicker
@@ -346,10 +364,54 @@ export default function HomeScreen() {
                 display="inline"
                 onChange={(_, picked) => {
                   if (Platform.OS !== 'ios') setShowDatePicker(false);
-                  if (picked) setNewEventDate(picked);
+                  if (!picked) return;
+                  setNewEventDate(picked);
+                  // keep the range valid if the start moves past the end
+                  if (newEventEnd && picked > newEventEnd) setNewEventEnd(picked);
                 }}
               />
             )}
+
+            <View style={styles.switchRow}>
+              <Text style={styles.formLabel}>Multi-day event</Text>
+              <Switch
+                value={newEventEnd !== null}
+                onValueChange={(on) => {
+                  setShowDatePicker(false);
+                  if (on) {
+                    setNewEventEnd(newEventDate);
+                    setShowEndPicker(true);
+                  } else {
+                    setNewEventEnd(null);
+                    setShowEndPicker(false);
+                  }
+                }}
+                trackColor={{ true: C.green, false: C.borderMd }}
+              />
+            </View>
+
+            {newEventEnd && (
+              <>
+                <Text style={styles.formLabel}>Ends</Text>
+                <TouchableOpacity style={styles.input} onPress={() => { setShowEndPicker(v => !v); setShowDatePicker(false); }}>
+                  <Text style={styles.dateValue}>{fmtLong(newEventEnd)}</Text>
+                </TouchableOpacity>
+                {showEndPicker && (
+                  <DateTimePicker
+                    value={newEventEnd}
+                    mode="date"
+                    display="inline"
+                    minimumDate={newEventDate}
+                    onChange={(_, picked) => {
+                      if (Platform.OS !== 'ios') setShowEndPicker(false);
+                      if (picked) setNewEventEnd(picked);
+                    }}
+                  />
+                )}
+                <Text style={styles.datePreview}>Shows as “{formatEventDate(newEventDate, newEventEnd)}”</Text>
+              </>
+            )}
+
             <Text style={styles.formLabel}>Event Name</Text>
             <TextInput style={styles.input} value={newEventName} onChangeText={setNewEventName}
               placeholder="e.g. Kyle's Birthday!" placeholderTextColor={C.inkDim} />
@@ -446,4 +508,6 @@ const styles = StyleSheet.create({
   formLabel:      { fontSize: 11, fontWeight: '600', color: C.inkDim, marginBottom: 8, marginTop: 20, textTransform: 'uppercase', letterSpacing: 0.8 },
   input:          { backgroundColor: '#f5f0e8', borderRadius: 12, padding: 14, fontSize: 16, color: C.ink, borderWidth: 1, borderColor: 'rgba(28,26,22,0.1)' },
   dateValue:      { fontSize: 16, color: C.ink },
+  switchRow:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18 },
+  datePreview:    { fontSize: 13, color: C.inkMid, marginTop: 8, fontStyle: 'italic' },
 });
