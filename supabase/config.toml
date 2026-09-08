@@ -1,0 +1,8 @@
+project_id = "tdprtdazqneazisdpqls"
+
+# send-push is called by pg_cron, not by a signed-in user, so it has no JWT
+# to present. It authenticates callers itself with the CRON_SECRET header
+# instead — see supabase/functions/send-push/index.ts. Without this, the
+# platform gateway rejects cron's requests before they reach the function.
+[functions.send-push]
+verify_jwt = false
