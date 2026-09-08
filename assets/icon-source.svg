@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#245C46"/>
+      <stop offset="55%" stop-color="#1B4332"/>
+      <stop offset="100%" stop-color="#12301F"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.40" r="0.62">
+      <stop offset="0%" stop-color="#3E8F68" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#3E8F68" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="0.15" y1="0" x2="0.85" y2="1">
+      <stop offset="0%"   stop-color="#FBE9A0"/>
+      <stop offset="28%"  stop-color="#F2C94C"/>
+      <stop offset="62%"  stop-color="#D9A520"/>
+      <stop offset="100%" stop-color="#A97708"/>
+    </linearGradient>
+    <linearGradient id="goldBase" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"   stop-color="#F2C94C"/>
+      <stop offset="55%"  stop-color="#C99617"/>
+      <stop offset="100%" stop-color="#9C6E06"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect width="1024" height="1024" fill="url(#glow)"/>
+
+  <g>
+    <!-- handles -->
+    <path d="M334 300 C214 300 190 342 190 396 C190 470 258 502 340 496"
+          fill="none" stroke="url(#gold)" stroke-width="40" stroke-linecap="round"/>
+    <path d="M690 300 C810 300 834 342 834 396 C834 470 766 502 684 496"
+          fill="none" stroke="url(#gold)" stroke-width="40" stroke-linecap="round"/>
+
+    <!-- bowl -->
+    <path d="M326 262 H698 V336 C698 486 618 578 512 578 C406 578 326 486 326 336 Z"
+          fill="url(#gold)"/>
+
+    <!-- rim highlight -->
+    <rect x="326" y="262" width="372" height="30" fill="#FDF3C8" opacity="0.55"/>
+
+    <!-- bowl sheen -->
+    <path d="M388 300 C388 452 424 536 470 560 C412 548 366 470 366 342 Z"
+          fill="#FFF6D2" opacity="0.28"/>
+
+    <!-- stem -->
+    <path d="M478 578 H546 V664 H478 Z" fill="url(#goldBase)"/>
+
+    <!-- base plate -->
+    <rect x="392" y="664" width="240" height="42" rx="14" fill="url(#gold)"/>
+    <!-- base -->
+    <rect x="336" y="716" width="352" height="74" rx="22" fill="url(#goldBase)"/>
+    <rect x="336" y="716" width="352" height="22" rx="11" fill="#FBE9A0" opacity="0.45"/>
+  </g>
+</svg>
