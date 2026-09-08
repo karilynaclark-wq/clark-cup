@@ -87,6 +87,23 @@ function buildFlatList(items: ActivityItem[]): FlatRow[] {
   return rows;
 }
 
+type QuickAdd = { label: string; points: number };
+
+const DEFAULT_QUICK_ADDS: QuickAdd[] = [
+  { label: 'Sunday Call',   points: 50  },
+  { label: 'Photo Contest', points: 100 },
+  { label: 'Game Night',    points: 10  },
+  { label: 'Recipe Share',  points: 30  },
+];
+
+// Fixed per slot: the emoji, how the points read, and which flow opens.
+const SLOT_META = [
+  { emoji: '📞', suffix: 'each'   },
+  { emoji: '📸', suffix: 'winner' },
+  { emoji: '🎲', suffix: 'each'   },
+  { emoji: '🍳', suffix: 'each'   },
+];
+
 export default function PointsScreen() {
   const { profile: myProfile, user, refreshProfile } = useAuth();
   const [flatRows,   setFlatRows]   = useState<FlatRow[]>([]);
@@ -109,12 +126,48 @@ export default function PointsScreen() {
   const [contestPhotoUri,  setContestPhotoUri]  = useState<string | null>(null);
   const [submittingPhoto,  setSubmittingPhoto]  = useState(false);
 
+  // The family's four Quick Add cards. Behaviour per slot is fixed; only
+  // the wording and the points are the family's to change.
+  const [quickAdds,     setQuickAdds]     = useState<QuickAdd[]>(DEFAULT_QUICK_ADDS);
+  const [editModal,     setEditModal]     = useState(false);
+  const [draftAdds,     setDraftAdds]     = useState<QuickAdd[]>(DEFAULT_QUICK_ADDS);
+  const [savingAdds,    setSavingAdds]    = useState(false);
+
   // Custom submit state
   const [customName,   setCustomName]   = useState('');
   const [customPoints, setCustomPoints] = useState('');
   const [notes,        setNotes]        = useState('');
   const [photoUri,     setPhotoUri]     = useState<string | null>(null);
   const [submitting,   setSubmitting]   = useState(false);
+
+  useEffect(() => {
+    if (!myProfile?.family_id) return;
+    supabase
+      .from('families')
+      .select('quick_adds')
+      .eq('id', myProfile.family_id)
+      .maybeSingle()
+      .then(({ data }) => {
+        const saved = (data as any)?.quick_adds;
+        if (Array.isArray(saved) && saved.length === 4) setQuickAdds(saved);
+      });
+  }, [myProfile?.family_id]);
+
+  const saveQuickAdds = async () => {
+    const cleaned = draftAdds.map((q, i) => ({
+      label: q.label.trim() || DEFAULT_QUICK_ADDS[i].label,
+      points: Math.max(1, parseInt(String(q.points), 10) || DEFAULT_QUICK_ADDS[i].points),
+    }));
+    setSavingAdds(true);
+    const { error } = await supabase
+      .from('families')
+      .update({ quick_adds: cleaned })
+      .eq('id', myProfile!.family_id);
+    setSavingAdds(false);
+    if (error) { Alert.alert('Error', 'Could not save your Quick Add cards.'); return; }
+    setQuickAdds(cleaned);
+    setEditModal(false);
+  };
 
   const fetchData = useCallback(async () => {
     const [{ data: acts }, { data: profs }] = await Promise.all([
@@ -166,7 +219,7 @@ export default function PointsScreen() {
   const handleSundaySubmit = async () => {
     if (selectedUsers.size === 0) { Alert.alert('Select at least one person'); return; }
     setSubmittingSunday(true);
-    const rows = Array.from(selectedUsers).map((uid) => ({ user_id: uid, category: 'sunday_call', points: 50, family_id: myProfile?.family_id }));
+    const rows = Array.from(selectedUsers).map((uid) => ({ user_id: uid, category: 'sunday_call', points: quickAdds[0].points, family_id: myProfile?.family_id }));
     const { error } = await supabase.from('point_submissions').insert(rows);
     setSubmittingSunday(false);
     if (error) { Alert.alert('Error', error.message); return; }
@@ -181,7 +234,7 @@ export default function PointsScreen() {
     let photoUrl: string | null = null;
     if (contestPhotoUri) photoUrl = await uploadPhoto(contestPhotoUri, 'photo-contest');
     const { error } = await supabase.from('point_submissions').insert({
-      user_id: photoWinner, category: 'weekly_photo', points: 100, photo_url: photoUrl,
+      user_id: photoWinner, category: 'weekly_photo', points: quickAdds[1].points, photo_url: photoUrl,
       family_id: myProfile?.family_id,
     });
     setSubmittingPhoto(false);
@@ -196,7 +249,7 @@ export default function PointsScreen() {
   const handleBoardGameSubmit = async () => {
     if (selectedBoardGameUsers.size === 0) { Alert.alert('Select at least one person'); return; }
     setSubmittingBoardGame(true);
-    const rows = Array.from(selectedBoardGameUsers).map((uid) => ({ user_id: uid, category: 'board_game', points: 10, family_id: myProfile?.family_id }));
+    const rows = Array.from(selectedBoardGameUsers).map((uid) => ({ user_id: uid, category: 'board_game', points: quickAdds[2].points, family_id: myProfile?.family_id }));
     const { error } = await supabase.from('point_submissions').insert(rows);
     setSubmittingBoardGame(false);
     if (error) { Alert.alert('Error', error.message); return; }
@@ -210,7 +263,7 @@ export default function PointsScreen() {
   const handleRecipeSubmit = async () => {
     if (selectedRecipeUsers.size === 0) { Alert.alert('Select at least one person'); return; }
     setSubmittingRecipe(true);
-    const rows = Array.from(selectedRecipeUsers).map((uid) => ({ user_id: uid, category: 'recipe', points: 30, family_id: myProfile?.family_id }));
+    const rows = Array.from(selectedRecipeUsers).map((uid) => ({ user_id: uid, category: 'recipe', points: quickAdds[3].points, family_id: myProfile?.family_id }));
     const { error } = await supabase.from('point_submissions').insert(rows);
     setSubmittingRecipe(false);
     if (error) { Alert.alert('Error', error.message); return; }
@@ -285,35 +338,33 @@ export default function PointsScreen() {
 
       {/* Quick Add */}
       <View style={styles.section}>
-        <Text style={styles.sectionLabel}>Quick Add</Text>
+        <View style={styles.quickHeader}>
+          <Text style={styles.sectionLabel}>Quick Add</Text>
+          <TouchableOpacity
+            onPress={() => { setDraftAdds(quickAdds); setEditModal(true); }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Text style={styles.editLink}>Edit</Text>
+          </TouchableOpacity>
+        </View>
         <View style={styles.quickGrid}>
-          <TouchableOpacity style={styles.quickCard} onPress={() => setSundayModal(true)} activeOpacity={0.75}>
-            <Text style={styles.quickEmoji}>📞</Text>
-            <Text style={styles.quickName}>Sunday Call</Text>
-            <Text style={styles.quickPts}>+50 each</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.quickCard} onPress={() => setPhotoModal(true)} activeOpacity={0.75}>
-            <Text style={styles.quickEmoji}>📸</Text>
-            <Text style={styles.quickName}>Photo Contest</Text>
-            <Text style={styles.quickPts}>+100 winner</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.quickCard} onPress={() => setBoardGameModal(true)} activeOpacity={0.75}>
-            <Text style={styles.quickEmoji}>🎲</Text>
-            <Text style={styles.quickName}>Game Night</Text>
-            <Text style={styles.quickPts}>+10 each</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.quickCard} onPress={() => setRecipeModal(true)} activeOpacity={0.75}>
-            <Text style={styles.quickEmoji}>🍳</Text>
-            <Text style={styles.quickName}>Recipe Share</Text>
-            <Text style={styles.quickPts}>+30 each</Text>
-          </TouchableOpacity>
+          {quickAdds.map((q, i) => (
+            <TouchableOpacity
+              key={i}
+              style={styles.quickCard}
+              activeOpacity={0.75}
+              onPress={() => [setSundayModal, setPhotoModal, setBoardGameModal, setRecipeModal][i](true)}>
+              <Text style={styles.quickEmoji}>{SLOT_META[i].emoji}</Text>
+              <Text style={styles.quickName}>{q.label}</Text>
+              <Text style={styles.quickPts}>+{q.points} {SLOT_META[i].suffix}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
       </View>
 
       {/* Submit button */}
       <View style={styles.submitWrap}>
         <TouchableOpacity style={styles.submitBtn} onPress={() => setSubmitModal(true)} activeOpacity={0.8}>
-          <Text style={styles.submitBtnText}>+ Submit Points</Text>
+          <Text style={styles.submitBtnText}>+ Add Points</Text>
         </TouchableOpacity>
       </View>
 
@@ -350,6 +401,51 @@ export default function PointsScreen() {
         <View style={{ height: 20 }} />
       </ScrollView>
 
+      {/* ── Edit Quick Add Modal ──────────────────────────── */}
+      <Modal visible={editModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setEditModal(false)}>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setEditModal(false)}>
+              <Text style={styles.modalCancel}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Edit Quick Add</Text>
+            <TouchableOpacity onPress={saveQuickAdds} disabled={savingAdds}>
+              <Text style={[styles.modalDone, savingAdds && { opacity: 0.4 }]}>Save</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView contentContainerStyle={styles.modalScroll} keyboardShouldPersistTaps="handled">
+            <Text style={styles.editIntro}>
+              Rename these to match how your family earns points. All four stay — clear one and it goes back to its default.
+            </Text>
+            {draftAdds.map((q, i) => (
+              <View key={i} style={styles.editRow}>
+                <Text style={styles.editEmoji}>{SLOT_META[i].emoji}</Text>
+                <View style={styles.editFields}>
+                  <TextInput
+                    style={styles.input}
+                    value={q.label}
+                    onChangeText={(t) => setDraftAdds((d) => d.map((x, j) => j === i ? { ...x, label: t } : x))}
+                    placeholder={DEFAULT_QUICK_ADDS[i].label}
+                    placeholderTextColor={C.inkDim}
+                  />
+                  <View style={styles.editPtsRow}>
+                    <TextInput
+                      style={[styles.input, styles.editPtsInput]}
+                      value={String(q.points)}
+                      onChangeText={(t) => setDraftAdds((d) => d.map((x, j) => j === i ? { ...x, points: t.replace(/[^0-9]/g, '') as any } : x))}
+                      keyboardType="number-pad"
+                      placeholder={String(DEFAULT_QUICK_ADDS[i].points)}
+                      placeholderTextColor={C.inkDim}
+                    />
+                    <Text style={styles.editPtsSuffix}>points {SLOT_META[i].suffix}</Text>
+                  </View>
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      </Modal>
+
       {/* ── Sunday Call Modal ─────────────────────────────── */}
       <Modal visible={sundayModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setSundayModal(false)}>
         <View style={styles.modalContainer}>
@@ -357,7 +453,7 @@ export default function PointsScreen() {
             <TouchableOpacity onPress={() => { setSundayModal(false); setSelectedUsers(new Set()); }} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
               <Text style={styles.modalCancel}>Cancel</Text>
             </TouchableOpacity>
-            <Text style={styles.modalTitle}>📞 Sunday Call</Text>
+            <Text style={styles.modalTitle}>📞 {quickAdds[0].label}</Text>
             <TouchableOpacity onPress={handleSundaySubmit} disabled={submittingSunday}>
               {submittingSunday ? <ActivityIndicator color={C.accent} /> : <Text style={styles.modalDone}>Add +50</Text>}
             </TouchableOpacity>
@@ -388,7 +484,7 @@ export default function PointsScreen() {
             <TouchableOpacity onPress={() => { setPhotoModal(false); setPhotoWinner(null); setContestPhotoUri(null); }} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
               <Text style={styles.modalCancel}>Cancel</Text>
             </TouchableOpacity>
-            <Text style={styles.modalTitle}>📸 Photo Contest</Text>
+            <Text style={styles.modalTitle}>📸 {quickAdds[1].label}</Text>
             <TouchableOpacity onPress={handlePhotoContestSubmit} disabled={submittingPhoto}>
               {submittingPhoto ? <ActivityIndicator color={C.accent} /> : <Text style={styles.modalDone}>Add +100</Text>}
             </TouchableOpacity>
@@ -459,7 +555,7 @@ export default function PointsScreen() {
             <TouchableOpacity onPress={() => { setBoardGameModal(false); setSelectedBoardGameUsers(new Set()); }} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
               <Text style={styles.modalCancel}>Cancel</Text>
             </TouchableOpacity>
-            <Text style={styles.modalTitle}>🎲 Board Game Night</Text>
+            <Text style={styles.modalTitle}>🎲 {quickAdds[2].label}</Text>
             <TouchableOpacity onPress={handleBoardGameSubmit} disabled={submittingBoardGame}>
               {submittingBoardGame ? <ActivityIndicator color={C.accent} /> : <Text style={styles.modalDone}>Add +10</Text>}
             </TouchableOpacity>
@@ -490,7 +586,7 @@ export default function PointsScreen() {
             <TouchableOpacity onPress={() => { setRecipeModal(false); setSelectedRecipeUsers(new Set()); }} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
               <Text style={styles.modalCancel}>Cancel</Text>
             </TouchableOpacity>
-            <Text style={styles.modalTitle}>🍳 Recipe Share</Text>
+            <Text style={styles.modalTitle}>🍳 {quickAdds[3].label}</Text>
             <TouchableOpacity onPress={handleRecipeSubmit} disabled={submittingRecipe}>
               {submittingRecipe ? <ActivityIndicator color={C.accent} /> : <Text style={styles.modalDone}>Add +30</Text>}
             </TouchableOpacity>
@@ -539,6 +635,15 @@ const styles = StyleSheet.create({
 
   // Quick Add
   quickGrid:     { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  quickHeader:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  editLink:      { fontSize: 14, fontWeight: '600', color: C.accent },
+  editIntro:     { fontSize: 13, color: C.inkMid, lineHeight: 19, marginBottom: 20 },
+  editRow:       { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 18 },
+  editEmoji:     { fontSize: 26, marginTop: 12 },
+  editFields:    { flex: 1, gap: 8 },
+  editPtsRow:    { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  editPtsInput:  { width: 90 },
+  editPtsSuffix: { fontSize: 14, color: C.inkMid },
   quickCard:     { width: '48%', flexShrink: 0, backgroundColor: C.card, borderRadius: 18, padding: 16, alignItems: 'flex-start', gap: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 3 },
   quickEmoji:    { fontSize: 22, lineHeight: 26 },
   quickName:     { fontSize: 15, fontWeight: '600', color: C.ink },
