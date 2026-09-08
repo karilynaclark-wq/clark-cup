@@ -207,7 +207,7 @@ export default function PointsScreen() {
     try {
       const ext = uri.split('.').pop() ?? 'jpg';
       const fileName = `${folder}/${Date.now()}.${ext}`;
-      const arrayBuffer = await new Response(await fetch(uri)).arrayBuffer();
+      const arrayBuffer = await (await fetch(uri)).arrayBuffer();
       const { error } = await supabase.storage
         .from('photos').upload(fileName, arrayBuffer, { contentType: `image/${ext}` });
       if (error) throw error;
