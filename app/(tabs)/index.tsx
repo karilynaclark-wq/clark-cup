@@ -11,7 +11,6 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -59,8 +58,11 @@ const fmtShort = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', da
 //   single day      → "June 15"
 //   same month      → "July 4–6"
 //   spanning months → "Jul 30 – Aug 2"
+const isSameDay = (a: Date, b: Date) =>
+  a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
 const formatEventDate = (start: Date, end: Date | null) => {
-  if (!end) return fmtLong(start);
+  if (!end || isSameDay(start, end)) return fmtLong(start);
   const sameMonth = start.getMonth() === end.getMonth()
     && start.getFullYear() === end.getFullYear();
   return sameMonth
@@ -111,7 +113,7 @@ export default function HomeScreen() {
   const [newEventFor,      setNewEventFor]      = useState<string | null>(null);
   const [addEventModal,    setAddEventModal]    = useState(false);
   const [newEventDate,     setNewEventDate]     = useState<Date>(new Date());
-  const [newEventEnd,      setNewEventEnd]      = useState<Date | null>(null);
+  const [newEventEnd,      setNewEventEnd]      = useState<Date>(new Date());
   const [showDatePicker,   setShowDatePicker]   = useState(false);
   const [showEndPicker,    setShowEndPicker]    = useState(false);
   const [newEventName,     setNewEventName]     = useState('');
@@ -169,7 +171,7 @@ export default function HomeScreen() {
     setSavingEvent(true);
     const { error } = await supabase.from('upcoming_events').insert({
       event_date: toISODate(newEventDate),
-      end_date:   newEventEnd ? toISODate(newEventEnd) : null,
+      end_date:   isSameDay(newEventDate, newEventEnd) ? null : toISODate(newEventEnd),
       date_label: formatEventDate(newEventDate, newEventEnd),
       profile_id: newEventFor,
       created_by: profile?.id ?? null,
@@ -180,7 +182,7 @@ export default function HomeScreen() {
     if (error) { Alert.alert('Error', 'Could not save event.'); return; }
     setAddEventModal(false);
     setNewEventDate(new Date());
-    setNewEventEnd(null);
+    setNewEventEnd(new Date());
     setShowDatePicker(false);
     setShowEndPicker(false);
     setNewEventName('');
@@ -345,7 +347,7 @@ export default function HomeScreen() {
       <Modal visible={addEventModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setAddEventModal(false)}>
         <KeyboardAvoidingView style={styles.modalContainer} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => { setAddEventModal(false); setNewEventDate(new Date()); setNewEventEnd(null); setShowDatePicker(false); setShowEndPicker(false); setNewEventName(''); setNewEventIcon('📅'); setNewEventFor(defaultEventFor()); }}>
+            <TouchableOpacity onPress={() => { setAddEventModal(false); setNewEventDate(new Date()); setNewEventEnd(new Date()); setShowDatePicker(false); setShowEndPicker(false); setNewEventName(''); setNewEventIcon('📅'); setNewEventFor(defaultEventFor()); }}>
               <Text style={styles.modalCancel}>Cancel</Text>
             </TouchableOpacity>
             <Text style={styles.modalTitle}>Add Event</Text>
@@ -354,7 +356,7 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={styles.modalScroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
-            <Text style={styles.formLabel}>{newEventEnd ? 'Starts' : 'Date'}</Text>
+            <Text style={styles.formLabel}>Starts</Text>
             <TouchableOpacity style={styles.input} onPress={() => { setShowDatePicker(v => !v); setShowEndPicker(false); }}>
               <Text style={styles.dateValue}>{fmtLong(newEventDate)}</Text>
             </TouchableOpacity>
@@ -367,51 +369,33 @@ export default function HomeScreen() {
                   if (Platform.OS !== 'ios') setShowDatePicker(false);
                   if (!picked) return;
                   setNewEventDate(picked);
-                  // keep the range valid if the start moves past the end
-                  if (newEventEnd && picked > newEventEnd) setNewEventEnd(picked);
+                  // drag the end along rather than leaving an impossible range
+                  if (picked > newEventEnd) setNewEventEnd(picked);
                 }}
               />
             )}
 
-            <View style={styles.switchRow}>
-              <Text style={styles.formLabel}>Multi-day event</Text>
-              <Switch
-                value={newEventEnd !== null}
-                onValueChange={(on) => {
-                  setShowDatePicker(false);
-                  if (on) {
-                    setNewEventEnd(newEventDate);
-                    setShowEndPicker(true);
-                  } else {
-                    setNewEventEnd(null);
-                    setShowEndPicker(false);
-                  }
+            <Text style={styles.formLabel}>Ends</Text>
+            <TouchableOpacity style={styles.input} onPress={() => { setShowEndPicker(v => !v); setShowDatePicker(false); }}>
+              <Text style={styles.dateValue}>{fmtLong(newEventEnd)}</Text>
+            </TouchableOpacity>
+            {showEndPicker && (
+              <DateTimePicker
+                value={newEventEnd}
+                mode="date"
+                display="inline"
+                minimumDate={newEventDate}
+                onChange={(_, picked) => {
+                  if (Platform.OS !== 'ios') setShowEndPicker(false);
+                  if (picked) setNewEventEnd(picked);
                 }}
-                trackColor={{ true: C.green, false: C.borderMd }}
               />
-            </View>
-
-            {newEventEnd && (
-              <>
-                <Text style={styles.formLabel}>Ends</Text>
-                <TouchableOpacity style={styles.input} onPress={() => { setShowEndPicker(v => !v); setShowDatePicker(false); }}>
-                  <Text style={styles.dateValue}>{fmtLong(newEventEnd)}</Text>
-                </TouchableOpacity>
-                {showEndPicker && (
-                  <DateTimePicker
-                    value={newEventEnd}
-                    mode="date"
-                    display="inline"
-                    minimumDate={newEventDate}
-                    onChange={(_, picked) => {
-                      if (Platform.OS !== 'ios') setShowEndPicker(false);
-                      if (picked) setNewEventEnd(picked);
-                    }}
-                  />
-                )}
-                <Text style={styles.datePreview}>Shows as “{formatEventDate(newEventDate, newEventEnd)}”</Text>
-              </>
             )}
+            <Text style={styles.datePreview}>
+              {isSameDay(newEventDate, newEventEnd)
+                ? `Single day \u2014 shows as \u201c${formatEventDate(newEventDate, newEventEnd)}\u201d`
+                : `Shows as \u201c${formatEventDate(newEventDate, newEventEnd)}\u201d`}
+            </Text>
 
             <Text style={styles.formLabel}>Who is it for?</Text>
             <View style={styles.chipRow}>
@@ -518,7 +502,6 @@ const styles = StyleSheet.create({
   formLabel:      { fontSize: 11, fontWeight: '600', color: C.inkDim, marginBottom: 8, marginTop: 20, textTransform: 'uppercase', letterSpacing: 0.8 },
   input:          { backgroundColor: '#f5f0e8', borderRadius: 12, padding: 14, fontSize: 16, color: C.ink, borderWidth: 1, borderColor: 'rgba(28,26,22,0.1)' },
   dateValue:      { fontSize: 16, color: C.ink },
-  switchRow:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18 },
   datePreview:    { fontSize: 13, color: C.inkMid, marginTop: 8, fontStyle: 'italic' },
   chipRow:        { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingVertical: 2 },
   chip:           { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999, backgroundColor: '#f5f0e8', borderWidth: 1, borderColor: 'rgba(28,26,22,0.1)' },
