@@ -47,9 +47,20 @@ export default function ProfileScreen() {
   const [avatarUri,       setAvatarUri]       = useState<string | null>(null);
   const [saving,          setSaving]          = useState(false);
   const [deleting,        setDeleting]        = useState(false);
+  const [family,          setFamily]          = useState<{ name: string; join_code: string } | null>(null);
   const [newPassword,     setNewPassword]     = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changingPw,      setChangingPw]      = useState(false);
+
+  useEffect(() => {
+    if (!profile?.family_id) return;
+    supabase
+      .from('families')
+      .select('name, join_code')
+      .eq('id', profile.family_id)
+      .maybeSingle()
+      .then(({ data }) => setFamily(data as any));
+  }, [profile?.family_id]);
 
   useEffect(() => {
     if (profile) {
@@ -281,6 +292,19 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* ── YOUR FAMILY ──────────────────────────────── */}
+          {family && (
+            <View style={styles.familyCard}>
+              <Text style={styles.familyLabel}>YOUR FAMILY</Text>
+              <Text style={styles.familyName}>{family.name}</Text>
+              <Text style={styles.familyCodeLabel}>Invite code</Text>
+              <Text style={styles.familyCode}>{family.join_code}</Text>
+              <Text style={styles.familyHint}>
+                Share this code so family members can join. They enter it when they sign up.
+              </Text>
+            </View>
+          )}
+
           {/* ── SIGN OUT ─────────────────────────────────── */}
           <View style={[styles.btnWrap, { paddingTop: 20, paddingBottom: 8 }]}>
             <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut} activeOpacity={0.8}>
@@ -372,6 +396,12 @@ const styles = StyleSheet.create({
   outlineBtnText:{ color: C.ink, fontSize: 15, fontWeight: '600' },
   signOutBtn:    { borderRadius: 22, paddingVertical: 16, alignItems: 'center', borderWidth: 1.5, borderColor: 'rgba(212,95,46,0.25)' },
   signOutText:   { color: C.accent, fontSize: 14, fontWeight: '600', letterSpacing: 0.1 },
+  familyCard:    { backgroundColor: C.card, borderRadius: 18, padding: 20, marginTop: 24, borderWidth: 1, borderColor: C.border },
+  familyLabel:   { fontSize: 11, fontWeight: '700', color: C.inkDim, letterSpacing: 1, marginBottom: 6 },
+  familyName:    { fontSize: 20, fontWeight: '700', color: C.ink, marginBottom: 16 },
+  familyCodeLabel:{ fontSize: 11, fontWeight: '600', color: C.inkMid, letterSpacing: 0.6, marginBottom: 4 },
+  familyCode:    { fontSize: 30, fontWeight: '800', color: C.green, letterSpacing: 6, marginBottom: 10 },
+  familyHint:    { fontSize: 12, color: C.inkMid, lineHeight: 18 },
   deleteText:    { color: '#b3261e', fontSize: 13, fontWeight: '500', textAlign: 'center', paddingVertical: 12 },
 
   // Legal footer

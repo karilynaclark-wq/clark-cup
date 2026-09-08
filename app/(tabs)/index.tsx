@@ -49,10 +49,6 @@ type ActivityItem  = PointSubmission & { profiles?: { username: string; avatar_u
 
 const AVATAR_COLORS = ['#d45f2e','#3a6b4a','#7a6abf','#c4743a','#5a7abf','#b45a7a'];
 
-// The five family members, in the order the chips should read. Anyone
-// not listed here (a test account, say) is left out of the picker.
-const FAMILY_ORDER = ['Mom', 'Kelly', 'Kris', 'Kari', 'Kyle'];
-
 const fmtLong  = (d: Date) => d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
 const fmtShort = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
@@ -163,8 +159,7 @@ export default function HomeScreen() {
 
   // Preselect the signed-in member, unless they are not one of the five
   // (a test account), in which case start on Everyone.
-  const defaultEventFor = () =>
-    profile && FAMILY_ORDER.includes(profile.username) ? profile.id : null;
+  const defaultEventFor = () => profile?.id ?? null;
 
   const handleAddEvent = async () => {
     if (!newEventName.trim()) {
@@ -177,6 +172,7 @@ export default function HomeScreen() {
       end_date:   isSameDay(newEventDate, newEventEnd) ? null : toISODate(newEventEnd),
       date_label: formatEventDate(newEventDate, newEventEnd),
       profile_id: newEventFor,
+      family_id:  profile?.family_id,
       created_by: profile?.id ?? null,
       name:       newEventName.trim(),
       icon:       newEventIcon || '✈️',
@@ -214,10 +210,10 @@ export default function HomeScreen() {
   };
 
 
-  // Only the five family members, in FAMILY_ORDER order
-  const familyChips = FAMILY_ORDER
-    .map((n) => family.find((m) => m.username === n))
-    .filter((m): m is FamilyMember => Boolean(m));
+  // Whoever is actually in this family. RLS already limits the query to
+  // them, so no name list is needed -- and a hardcoded one would leave
+  // every family but the Clarks with an empty picker.
+  const familyChips = family;
 
   const formatDate = (iso: string) =>
     new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });

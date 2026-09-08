@@ -18,6 +18,9 @@ import { COLORS } from '@/constants/Colors';
 
 export default function SignupScreen() {
   const router = useRouter();
+  const [mode, setMode] = useState<'join' | 'create'>('join');
+  const [joinCode, setJoinCode] = useState('');
+  const [familyName, setFamilyName] = useState('');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -27,6 +30,14 @@ export default function SignupScreen() {
   const handleSignup = async () => {
     if (!username || !email || !password || !confirm) {
       Alert.alert('Missing fields', 'Please fill in all fields.');
+      return;
+    }
+    if (mode === 'join' && !joinCode.trim()) {
+      Alert.alert('Family code needed', 'Enter the code from whoever invited you, or start a new family instead.');
+      return;
+    }
+    if (mode === 'create' && !familyName.trim()) {
+      Alert.alert('Family name needed', 'What should your family be called?');
       return;
     }
     if (password !== confirm) {
@@ -39,6 +50,21 @@ export default function SignupScreen() {
     }
 
     setLoading(true);
+
+    // Resolve the family first: no point creating a login that cannot be
+    // attached to anything.
+    let familyId: string | null = null;
+    if (mode === 'join') {
+      const { data: found, error: codeErr } = await supabase
+        .rpc('family_id_for_code', { code: joinCode.trim() });
+      if (codeErr || !found) {
+        setLoading(false);
+        Alert.alert('Code not recognized', 'Double-check the code with whoever invited you.');
+        return;
+      }
+      familyId = found as string;
+    }
+
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -52,14 +78,30 @@ export default function SignupScreen() {
     }
 
     if (data.user) {
+      // Starting a new family: create it now that we know the login exists.
+      if (mode === 'create') {
+        const { data: newFamily, error: famErr } = await supabase
+          .from('families')
+          .insert({ name: familyName.trim() })
+          .select('id')
+          .single();
+        if (famErr || !newFamily) {
+          setLoading(false);
+          Alert.alert('Sign up failed', famErr?.message ?? 'Could not create your family.');
+          return;
+        }
+        familyId = newFamily.id;
+      }
+
       // Check if there's an existing placeholder profile with this username
       // (for family members who have historical data but haven't signed up yet)
       const { data: existingProfile } = await supabase
         .from('profiles')
         .select('id')
         .eq('username', username.trim())
+        .eq('family_id', familyId)
         .is('auth_user_id', null)
-        .single();
+        .maybeSingle();
 
       if (existingProfile) {
         // Claim the existing profile — link it to this auth account
@@ -78,6 +120,7 @@ export default function SignupScreen() {
           auth_user_id: data.user.id,
           username: username.trim(),
           email: email.trim().toLowerCase(),
+          family_id: familyId,
         });
         if (profileError) {
           setLoading(false);
@@ -108,6 +151,53 @@ export default function SignupScreen() {
         </View>
 
         <View style={styles.form}>
+          <View style={styles.segment}>
+            <TouchableOpacity
+              style={[styles.segmentBtn, mode === 'join' && styles.segmentBtnOn]}
+              onPress={() => setMode('join')}>
+              <Text style={[styles.segmentText, mode === 'join' && styles.segmentTextOn]}>
+                Join a family
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.segmentBtn, mode === 'create' && styles.segmentBtnOn]}
+              onPress={() => setMode('create')}>
+              <Text style={[styles.segmentText, mode === 'create' && styles.segmentTextOn]}>
+                Start a new one
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {mode === 'join' ? (
+            <>
+              <Text style={styles.label}>Family Code</Text>
+              <TextInput
+                style={styles.input}
+                value={joinCode}
+                onChangeText={(t) => setJoinCode(t.toUpperCase())}
+                placeholder="6-letter code"
+                placeholderTextColor={COLORS.textSecondary}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                maxLength={6}
+              />
+              <Text style={styles.hint}>Ask whoever invited you — it's on their Profile screen.</Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.label}>Family Name</Text>
+              <TextInput
+                style={styles.input}
+                value={familyName}
+                onChangeText={setFamilyName}
+                placeholder="e.g. The Clarks"
+                placeholderTextColor={COLORS.textSecondary}
+                autoCorrect={false}
+              />
+              <Text style={styles.hint}>You'll get a code to invite everyone else.</Text>
+            </>
+          )}
+
           <Text style={styles.label}>Display Name</Text>
           <TextInput
             style={styles.input}
@@ -195,6 +285,38 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 12,
     elevation: 8,
+  },
+  segment: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.background,
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 20,
+    gap: 4,
+  },
+  segmentBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 9,
+    alignItems: 'center',
+  },
+  segmentBtnOn: {
+    backgroundColor: COLORS.primary,
+  },
+  segmentText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+  },
+  segmentTextOn: {
+    color: COLORS.white,
+  },
+  hint: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: -10,
+    marginBottom: 16,
+    lineHeight: 17,
   },
   label: {
     fontSize: 13,

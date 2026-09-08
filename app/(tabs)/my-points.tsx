@@ -166,7 +166,7 @@ export default function PointsScreen() {
   const handleSundaySubmit = async () => {
     if (selectedUsers.size === 0) { Alert.alert('Select at least one person'); return; }
     setSubmittingSunday(true);
-    const rows = Array.from(selectedUsers).map((uid) => ({ user_id: uid, category: 'sunday_call', points: 50 }));
+    const rows = Array.from(selectedUsers).map((uid) => ({ user_id: uid, category: 'sunday_call', points: 50, family_id: myProfile?.family_id }));
     const { error } = await supabase.from('point_submissions').insert(rows);
     setSubmittingSunday(false);
     if (error) { Alert.alert('Error', error.message); return; }
@@ -182,6 +182,7 @@ export default function PointsScreen() {
     if (contestPhotoUri) photoUrl = await uploadPhoto(contestPhotoUri, 'photo-contest');
     const { error } = await supabase.from('point_submissions').insert({
       user_id: photoWinner, category: 'weekly_photo', points: 100, photo_url: photoUrl,
+      family_id: myProfile?.family_id,
     });
     setSubmittingPhoto(false);
     if (error) { Alert.alert('Error', error.message); return; }
@@ -195,7 +196,7 @@ export default function PointsScreen() {
   const handleBoardGameSubmit = async () => {
     if (selectedBoardGameUsers.size === 0) { Alert.alert('Select at least one person'); return; }
     setSubmittingBoardGame(true);
-    const rows = Array.from(selectedBoardGameUsers).map((uid) => ({ user_id: uid, category: 'board_game', points: 10 }));
+    const rows = Array.from(selectedBoardGameUsers).map((uid) => ({ user_id: uid, category: 'board_game', points: 10, family_id: myProfile?.family_id }));
     const { error } = await supabase.from('point_submissions').insert(rows);
     setSubmittingBoardGame(false);
     if (error) { Alert.alert('Error', error.message); return; }
@@ -209,7 +210,7 @@ export default function PointsScreen() {
   const handleRecipeSubmit = async () => {
     if (selectedRecipeUsers.size === 0) { Alert.alert('Select at least one person'); return; }
     setSubmittingRecipe(true);
-    const rows = Array.from(selectedRecipeUsers).map((uid) => ({ user_id: uid, category: 'recipe', points: 30 }));
+    const rows = Array.from(selectedRecipeUsers).map((uid) => ({ user_id: uid, category: 'recipe', points: 30, family_id: myProfile?.family_id }));
     const { error } = await supabase.from('point_submissions').insert(rows);
     setSubmittingRecipe(false);
     if (error) { Alert.alert('Error', error.message); return; }
@@ -229,7 +230,7 @@ export default function PointsScreen() {
     let photoUrl: string | null = null;
     if (photoUri) photoUrl = await uploadPhoto(photoUri);
     const { error } = await supabase.from('point_submissions').insert({
-      user_id: myProfile.id, category: 'miscellaneous',
+      user_id: myProfile.id, category: 'miscellaneous', family_id: myProfile?.family_id,
       custom_name: customName.trim(), points: pts,
       photo_url: photoUrl, notes: notes.trim() || null,
     });
