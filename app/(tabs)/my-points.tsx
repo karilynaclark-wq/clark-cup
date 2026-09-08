@@ -289,22 +289,22 @@ export default function PointsScreen() {
           <TouchableOpacity style={styles.quickCard} onPress={() => setSundayModal(true)} activeOpacity={0.75}>
             <Text style={styles.quickEmoji}>📞</Text>
             <Text style={styles.quickName}>Sunday Call</Text>
-            <View style={styles.quickPtsBadge}><Text style={styles.quickPtsText}>+50 pts each</Text></View>
+            <Text style={styles.quickPts}>+50 each</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.quickCard} onPress={() => setPhotoModal(true)} activeOpacity={0.75}>
             <Text style={styles.quickEmoji}>📸</Text>
             <Text style={styles.quickName}>Photo Contest</Text>
-            <View style={styles.quickPtsBadge}><Text style={styles.quickPtsText}>+100 pts winner</Text></View>
+            <Text style={styles.quickPts}>+100 winner</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.quickCard} onPress={() => setBoardGameModal(true)} activeOpacity={0.75}>
             <Text style={styles.quickEmoji}>🎲</Text>
-            <Text style={styles.quickName}>Board Game Night</Text>
-            <View style={styles.quickPtsBadge}><Text style={styles.quickPtsText}>+10 pts each</Text></View>
+            <Text style={styles.quickName}>Game Night</Text>
+            <Text style={styles.quickPts}>+10 each</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.quickCard} onPress={() => setRecipeModal(true)} activeOpacity={0.75}>
             <Text style={styles.quickEmoji}>🍳</Text>
             <Text style={styles.quickName}>Recipe Share</Text>
-            <View style={styles.quickPtsBadge}><Text style={styles.quickPtsText}>+30 pts each</Text></View>
+            <Text style={styles.quickPts}>+30 each</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -537,12 +537,11 @@ const styles = StyleSheet.create({
   sectionLabel: { fontSize: 11, fontWeight: '600', letterSpacing: 1, textTransform: 'uppercase', color: C.inkDim, marginBottom: 10 },
 
   // Quick Add
-  quickGrid:     { flexDirection: 'row', gap: 10 },
-  quickCard:     { flex: 1, backgroundColor: C.card, borderRadius: 22, padding: 20, alignItems: 'center', gap: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 3 },
-  quickEmoji:    { fontSize: 30, lineHeight: 34 },
-  quickName:     { fontSize: 14, fontWeight: '600', color: C.ink, textAlign: 'center' },
-  quickPtsBadge: { backgroundColor: C.greenBg, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  quickPtsText:  { fontSize: 11, fontWeight: '600', color: C.green },
+  quickGrid:     { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  quickCard:     { flexBasis: '46%', flexGrow: 1, backgroundColor: C.card, borderRadius: 18, padding: 16, alignItems: 'flex-start', gap: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 3 },
+  quickEmoji:    { fontSize: 22, lineHeight: 26 },
+  quickName:     { fontSize: 15, fontWeight: '600', color: C.ink },
+  quickPts:      { fontSize: 13, fontWeight: '500', color: C.green },
 
   // Submit button
   submitWrap:    { paddingHorizontal: 20, paddingTop: 14 },
