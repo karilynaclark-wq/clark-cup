@@ -16,11 +16,8 @@ import { StatusBar } from 'expo-status-bar';
 import { supabase } from '@/lib/supabase';
 import { COLORS } from '@/constants/Colors';
 
-const ACCESS_CODE = 'remember the talk';
-
 export default function SignupScreen() {
   const router = useRouter();
-  const [accessCode, setAccessCode] = useState('');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -28,12 +25,8 @@ export default function SignupScreen() {
   const [loading, setLoading] = useState(false);
 
   const handleSignup = async () => {
-    if (!accessCode || !username || !email || !password || !confirm) {
+    if (!username || !email || !password || !confirm) {
       Alert.alert('Missing fields', 'Please fill in all fields.');
-      return;
-    }
-    if (accessCode.trim().toLowerCase() !== ACCESS_CODE) {
-      Alert.alert('Invalid invite code', 'That invite code is not recognized. Please check with your group admin.');
       return;
     }
     if (password !== confirm) {
@@ -112,21 +105,9 @@ export default function SignupScreen() {
         <View style={styles.header}>
           <Text style={styles.trophy}>🏆</Text>
           <Text style={styles.title}>Join Family Cup</Text>
-          <Text style={styles.subtitle}>Early access — invite only</Text>
         </View>
 
         <View style={styles.form}>
-          <Text style={styles.label}>Group Invite Code</Text>
-          <TextInput
-            style={styles.input}
-            value={accessCode}
-            onChangeText={setAccessCode}
-            placeholder="Enter your group's invite code"
-            placeholderTextColor={COLORS.textSecondary}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-
           <Text style={styles.label}>Display Name</Text>
           <TextInput
             style={styles.input}
@@ -204,11 +185,6 @@ const styles = StyleSheet.create({
     fontSize: 30,
     fontWeight: '800',
     color: COLORS.white,
-  },
-  subtitle: {
-    fontSize: 15,
-    color: COLORS.accent,
-    marginTop: 4,
   },
   form: {
     backgroundColor: COLORS.white,
