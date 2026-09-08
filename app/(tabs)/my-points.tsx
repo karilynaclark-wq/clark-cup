@@ -538,7 +538,7 @@ const styles = StyleSheet.create({
 
   // Quick Add
   quickGrid:     { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  quickCard:     { flexBasis: '46%', flexGrow: 1, backgroundColor: C.card, borderRadius: 18, padding: 16, alignItems: 'flex-start', gap: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 3 },
+  quickCard:     { width: '48%', flexShrink: 0, backgroundColor: C.card, borderRadius: 18, padding: 16, alignItems: 'flex-start', gap: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 3 },
   quickEmoji:    { fontSize: 22, lineHeight: 26 },
   quickName:     { fontSize: 15, fontWeight: '600', color: C.ink },
   quickPts:      { fontSize: 13, fontWeight: '500', color: C.green },
