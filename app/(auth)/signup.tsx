@@ -80,17 +80,16 @@ export default function SignupScreen() {
     if (data.user) {
       // Starting a new family: create it now that we know the login exists.
       if (mode === 'create') {
-        const { data: newFamily, error: famErr } = await supabase
-          .from('families')
-          .insert({ name: familyName.trim() })
-          .select('id')
-          .single();
-        if (famErr || !newFamily) {
+        // An RPC, not an insert: the new family is not yours until your
+        // profile points at it, so reading back its id is otherwise refused.
+        const { data: newFamilyId, error: famErr } = await supabase
+          .rpc('create_family', { family_name: familyName.trim() });
+        if (famErr || !newFamilyId) {
           setLoading(false);
           Alert.alert('Sign up failed', famErr?.message ?? 'Could not create your family.');
           return;
         }
-        familyId = newFamily.id;
+        familyId = newFamilyId as string;
       }
 
       // Check if there's an existing placeholder profile with this username

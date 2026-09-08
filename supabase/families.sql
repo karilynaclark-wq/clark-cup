@@ -41,6 +41,10 @@ BEGIN
 END;
 $$;
 
+-- generate_join_code() has to exist before it can be a default, which is
+-- why this is not on the CREATE TABLE above.
+ALTER TABLE families ALTER COLUMN join_code SET DEFAULT generate_join_code();
+
 -- ─── Scope every table to a family ───────────────────────────────
 ALTER TABLE profiles           ADD COLUMN IF NOT EXISTS family_id UUID REFERENCES families(id) ON DELETE CASCADE;
 ALTER TABLE point_submissions  ADD COLUMN IF NOT EXISTS family_id UUID REFERENCES families(id) ON DELETE CASCADE;
@@ -143,6 +147,18 @@ RETURNS UUID LANGUAGE sql STABLE SECURITY DEFINER AS $$
   SELECT id FROM families WHERE join_code = upper(trim(code)) LIMIT 1;
 $$;
 
+CREATE OR REPLACE FUNCTION create_family(family_name TEXT)
+RETURNS UUID LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE new_id UUID;
+BEGIN
+  INSERT INTO families (name, join_code)
+  VALUES (trim(family_name), generate_join_code())
+  RETURNING id INTO new_id;
+  RETURN new_id;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION create_family(TEXT)      TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION family_id_for_code(TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION current_family_id()      TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION generate_join_code()     TO anon, authenticated;
