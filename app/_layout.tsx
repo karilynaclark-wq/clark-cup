@@ -1,25 +1,85 @@
 import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
+import { Slot, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import * as Notifications from 'expo-notifications';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import 'react-native-reanimated';
+import { AuthProvider, useAuth } from '@/context/AuthContext';
 
-import { useColorScheme } from '@/components/useColorScheme';
+export { ErrorBoundary } from 'expo-router';
 
-export {
-  // Catch any errors thrown by the Layout component.
-  ErrorBoundary,
-} from 'expo-router';
-
-export const unstable_settings = {
-  // Ensure that reloading on `/modal` keeps a back button present.
-  initialRouteName: '(tabs)',
-};
-
-// Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
+async function registerPushToken(userId: string) {
+  // Push notifications don't work in Expo Go on simulator — need a real device or dev build
+  const { status: existingStatus } = await Notifications.getPermissionsAsync();
+  let finalStatus = existingStatus;
+  if (existingStatus !== 'granted') {
+    const { status } = await Notifications.requestPermissionsAsync();
+    finalStatus = status;
+  }
+  if (finalStatus !== 'granted') return;
+
+  try {
+    const tokenData = await Notifications.getExpoPushTokenAsync({
+      projectId: '38ca123f-ae30-4d6d-b2be-cc7ef30fc404',
+    });
+    const token = tokenData.data;
+
+    // Save token to profile so server can send push notifications
+    const { createClient } = await import('@supabase/supabase-js');
+    const { supabase } = await import('@/lib/supabase');
+    await supabase
+      .from('profiles')
+      .update({ push_token: token })
+      .eq('auth_user_id', userId);
+  } catch (e) {
+    console.log('Push token error:', e);
+  }
+}
+
+function RootLayoutNav() {
+  const { session, loading } = useAuth();
+  const segments = useSegments();
+  const router = useRouter();
+  const [checkingOnboard, setCheckingOnboard] = useState(true);
+
+  useEffect(() => {
+    if (loading) return;
+    const inAuthGroup = segments[0] === '(auth)';
+    const inOnboarding = segments[0] === 'onboarding';
+
+    AsyncStorage.getItem('onboarded').then((val) => {
+      setCheckingOnboard(false);
+      if (!val && !inOnboarding) {
+        router.replace('/onboarding');
+      } else if (!session && !inAuthGroup && !inOnboarding) {
+        router.replace('/(auth)/login');
+      } else if (session && inAuthGroup) {
+        router.replace('/(tabs)');
+      }
+    });
+  }, [session, loading]);
+
+  useEffect(() => {
+    if (!session) return;
+    registerPushToken(session.user.id);
+  }, [session]);
+
+  return <Slot />;
+}
 
 export default function RootLayout() {
   const [loaded, error] = useFonts({
@@ -27,33 +87,19 @@ export default function RootLayout() {
     ...FontAwesome.font,
   });
 
-  // Expo Router uses Error Boundaries to catch errors in the navigation tree.
   useEffect(() => {
     if (error) throw error;
   }, [error]);
 
   useEffect(() => {
-    if (loaded) {
-      SplashScreen.hideAsync();
-    }
+    if (loaded) SplashScreen.hideAsync();
   }, [loaded]);
 
-  if (!loaded) {
-    return null;
-  }
-
-  return <RootLayoutNav />;
-}
-
-function RootLayoutNav() {
-  const colorScheme = useColorScheme();
+  if (!loaded) return null;
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
-      </Stack>
-    </ThemeProvider>
+    <AuthProvider>
+      <RootLayoutNav />
+    </AuthProvider>
   );
 }

@@ -1,59 +1,72 @@
 import React from 'react';
-import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { Link, Tabs } from 'expo-router';
-import { Pressable } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
+import { Tabs } from 'expo-router';
+import { COLORS } from '@/constants/Colors';
 
-import Colors from '@/constants/Colors';
-import { useColorScheme } from '@/components/useColorScheme';
-import { useClientOnlyValue } from '@/components/useClientOnlyValue';
+const TABS = [
+  { name: 'index',       label: 'Home',        emoji: '🏠' },
+  { name: 'leaderboard', label: 'Leaderboard', emoji: '🏆' },
+  { name: 'my-points',   label: 'Points',      emoji: '⭐' },
+  { name: 'profile',     label: 'Profile',     emoji: '👤' },
+];
 
-// You can explore the built-in icon families and icons on the web at https://icons.expo.fyi/
-function TabBarIcon(props: {
-  name: React.ComponentProps<typeof FontAwesome>['name'];
-  color: string;
-}) {
-  return <FontAwesome size={28} style={{ marginBottom: -3 }} {...props} />;
+function EmojiTabIcon({ emoji, label, focused }: { emoji: string; label: string; focused: boolean }) {
+  return (
+    <View style={[styles.iconWrap, focused && styles.iconWrapActive]}>
+      <Text style={styles.emoji}>{emoji}</Text>
+    </View>
+  );
 }
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
-
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-        // Disable the static render of the header on web
-        // to prevent a hydration error in React Navigation v6.
-        headerShown: useClientOnlyValue(false, true),
-      }}>
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Tab One',
-          tabBarIcon: ({ color }) => <TabBarIcon name="code" color={color} />,
-          headerRight: () => (
-            <Link href="/modal" asChild>
-              <Pressable>
-                {({ pressed }) => (
-                  <FontAwesome
-                    name="info-circle"
-                    size={25}
-                    color={Colors[colorScheme ?? 'light'].text}
-                    style={{ marginRight: 15, opacity: pressed ? 0.5 : 1 }}
-                  />
-                )}
-              </Pressable>
-            </Link>
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="two"
-        options={{
-          title: 'Tab Two',
-          tabBarIcon: ({ color }) => <TabBarIcon name="code" color={color} />,
-        }}
-      />
+        headerShown: false,
+        tabBarActiveTintColor: COLORS.primary,
+        tabBarInactiveTintColor: COLORS.textSecondary,
+        tabBarStyle: {
+          backgroundColor: '#F5F5F0',
+          borderTopColor: COLORS.border,
+          height: 72,
+          paddingBottom: 8,
+          paddingTop: 6,
+        },
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '600',
+          marginTop: 0,
+        },
+      }}
+    >
+      {TABS.map((tab) => (
+        <Tabs.Screen
+          key={tab.name}
+          name={tab.name}
+          options={{
+            title: tab.label,
+            tabBarIcon: ({ focused }) => (
+              <EmojiTabIcon emoji={tab.emoji} label={tab.label} focused={focused} />
+            ),
+          }}
+        />
+      ))}
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  iconWrap: {
+    width: 48,
+    height: 36,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconWrapActive: {
+    backgroundColor: '#E8EDE8',
+  },
+  emoji: {
+    fontSize: 22,
+  },
+});
