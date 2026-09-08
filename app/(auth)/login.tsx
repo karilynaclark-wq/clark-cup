@@ -12,10 +12,13 @@ import {
   Alert,
 } from 'react-native';
 import { Link, useRouter } from 'expo-router';
-import { Linking } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 import { StatusBar } from 'expo-status-bar';
 import { supabase } from '@/lib/supabase';
 import { COLORS } from '@/constants/Colors';
+
+const PRIVACY_URL = 'https://www.notion.so/Clark-Cup-Privacy-Policy-3582a5e6a8498022a134f1aaef58b301';
+const SUPPORT_URL = 'https://www.notion.so/Family-Cup-Support-3582a5e6a849801cb7c0ccd5a4780b6e';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -88,11 +91,11 @@ export default function LoginScreen() {
 
         {/* Legal footer — required for App Store */}
         <View style={styles.legalRow}>
-          <TouchableOpacity onPress={() => Linking.openURL('https://www.notion.so/Clark-Cup-Privacy-Policy-3582a5e6a8498022a134f1aaef58b301')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <TouchableOpacity onPress={() => WebBrowser.openBrowserAsync(PRIVACY_URL)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Text style={styles.legalLink}>Privacy Policy</Text>
           </TouchableOpacity>
           <Text style={styles.legalDot}>·</Text>
-          <TouchableOpacity onPress={() => Linking.openURL('https://www.notion.so/Family-Cup-Support-3582a5e6a849801cb7c0ccd5a4780b6e')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <TouchableOpacity onPress={() => WebBrowser.openBrowserAsync(SUPPORT_URL)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Text style={styles.legalLink}>Support</Text>
           </TouchableOpacity>
         </View>

@@ -15,7 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
-import { Linking } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
@@ -33,6 +33,9 @@ const C = {
   accentBg: 'rgba(212,95,46,0.08)',
   green:    '#3a6b4a',
 };
+
+const PRIVACY_URL = 'https://www.notion.so/Clark-Cup-Privacy-Policy-3582a5e6a8498022a134f1aaef58b301';
+const SUPPORT_URL = 'https://www.notion.so/Family-Cup-Support-3582a5e6a849801cb7c0ccd5a4780b6e';
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -246,11 +249,11 @@ export default function ProfileScreen() {
 
           {/* ── LEGAL FOOTER ─────────────────────────────── */}
           <View style={styles.legalRow}>
-            <TouchableOpacity onPress={() => Linking.openURL('https://www.notion.so/Clark-Cup-Privacy-Policy-3582a5e6a8498022a134f1aaef58b301')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <TouchableOpacity onPress={() => WebBrowser.openBrowserAsync(PRIVACY_URL)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Text style={styles.legalLink}>Privacy Policy</Text>
             </TouchableOpacity>
             <Text style={styles.legalDot}>·</Text>
-            <TouchableOpacity onPress={() => Linking.openURL('https://www.notion.so/Family-Cup-Support-3582a5e6a849801cb7c0ccd5a4780b6e')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <TouchableOpacity onPress={() => WebBrowser.openBrowserAsync(SUPPORT_URL)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Text style={styles.legalLink}>Support</Text>
             </TouchableOpacity>
           </View>
