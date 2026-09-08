@@ -416,7 +416,7 @@ export default function HomeScreen() {
 
             <Text style={styles.formLabel}>Event Name</Text>
             <TextInput style={styles.input} value={newEventName} onChangeText={setNewEventName}
-              placeholder="e.g. Kyle's Birthday!" placeholderTextColor={C.inkDim} />
+              placeholder="e.g. Traveling to..." placeholderTextColor={C.inkDim} />
             <Text style={styles.formLabel}>Icon (emoji)</Text>
             <TextInput style={styles.input} value={newEventIcon} onChangeText={setNewEventIcon}
               placeholder="📅" placeholderTextColor={C.inkDim} />
