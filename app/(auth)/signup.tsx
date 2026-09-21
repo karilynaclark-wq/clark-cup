@@ -173,7 +173,11 @@ export default function SignupScreen() {
           {mode === 'join' ? (
             <>
               <Text style={styles.label}>Family Code</Text>
+              {/* Distinct keys: without them React reuses one native field for
+                  both modes, and iOS can keep the code field's maxLength and
+                  all-caps settings, leaving Family Name impossible to type in. */}
               <TextInput
+                key="join-code"
                 style={styles.input}
                 value={joinCode}
                 onChangeText={(t) => setJoinCode(t.toUpperCase())}
@@ -189,12 +193,15 @@ export default function SignupScreen() {
             <>
               <Text style={styles.label}>Family Name</Text>
               <TextInput
+                key="family-name"
                 style={styles.input}
                 value={familyName}
                 onChangeText={setFamilyName}
                 placeholder="e.g. The Clarks"
                 placeholderTextColor={COLORS.textSecondary}
+                autoCapitalize="words"
                 autoCorrect={false}
+                maxLength={60}
               />
               <Text style={styles.hint}>You'll get a code to invite everyone else.</Text>
             </>
