@@ -537,7 +537,7 @@ export default function PointsScreen() {
 
       {/* ── Custom Submit Modal ───────────────────────────── */}
       <Modal visible={submitModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setSubmitModal(false)}>
-        <KeyboardAvoidingView style={styles.modalContainer} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <KeyboardAvoidingView style={styles.modalContainer} behavior={Platform.OS === 'ios' ? undefined : 'height'}>
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => { setSubmitModal(false); resetForm(); }} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
               <Text style={styles.modalCancel}>Cancel</Text>
@@ -547,7 +547,7 @@ export default function PointsScreen() {
               {submitting ? <ActivityIndicator color={C.accent} /> : <Text style={styles.modalDone}>Submit</Text>}
             </TouchableOpacity>
           </View>
-          <ScrollView contentContainerStyle={styles.modalScroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+          <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.modalScroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
             <Text style={styles.formLabel}>Activity Name</Text>
             <TextInput style={styles.input} value={customName} onChangeText={setCustomName}
               placeholder="e.g. Cooked a family recipe" placeholderTextColor={C.inkDim} />

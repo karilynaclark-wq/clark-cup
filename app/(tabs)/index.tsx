@@ -355,7 +355,7 @@ export default function HomeScreen() {
 
       {/* ── Add Event Modal ─────────────────────────────── */}
       <Modal visible={addEventModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setAddEventModal(false)}>
-        <KeyboardAvoidingView style={styles.modalContainer} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <KeyboardAvoidingView style={styles.modalContainer} behavior={Platform.OS === 'ios' ? undefined : 'height'}>
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => { setAddEventModal(false); setNewEventDate(new Date()); setNewEventEnd(new Date()); setShowDatePicker(false); setShowEndPicker(false); setNewEventName(''); setNewEventIcon('✈️'); setNewEventFor(defaultEventFor()); }}>
               <Text style={styles.modalCancel}>Cancel</Text>
@@ -365,7 +365,7 @@ export default function HomeScreen() {
               <Text style={[styles.modalSave, savingEvent && { opacity: 0.4 }]}>Save</Text>
             </TouchableOpacity>
           </View>
-          <ScrollView contentContainerStyle={styles.modalScroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+          <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.modalScroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
             <Text style={styles.formLabel}>Starts</Text>
             <TouchableOpacity style={styles.input} onPress={() => { setShowDatePicker(v => !v); setShowEndPicker(false); }}>
               <Text style={styles.dateValue}>{fmtLong(newEventDate)}</Text>
