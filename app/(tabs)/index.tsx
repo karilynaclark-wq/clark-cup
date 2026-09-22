@@ -238,7 +238,11 @@ export default function HomeScreen() {
           </View>
 
           <Text style={styles.greetingSmall}>Welcome back</Text>
-          <Text style={styles.greetingName}>{profile?.username ?? '—'}.</Text>
+          {/* First name only: the display name is often a full name, which
+              is too long for a 64pt greeting and reads stiffly. */}
+          <Text style={styles.greetingName}>
+            {profile?.username?.trim().split(/\s+/)[0] || '—'}.
+          </Text>
         </View>
 
         {/* ── UPCOMING ───────────────────────────────────── */}
