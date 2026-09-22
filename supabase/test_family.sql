@@ -1,5 +1,5 @@
 -- ══════════════════════════════════════════════════════════════════
--- Jones Family (test) — the App Review demo family
+-- The Joneses — the App Review demo family
 --
 -- Gives the reviewer a populated family of their own so they can see a
 -- working leaderboard, point history and upcoming events without ever
@@ -21,10 +21,10 @@ DECLARE
   review  UUID;
 BEGIN
   -- ── The family ───────────────────────────────────────────────
-  SELECT id INTO jones FROM families WHERE name = 'Jones Family (test)';
+  SELECT id INTO jones FROM families WHERE name = 'The Joneses';
   IF jones IS NULL THEN
     INSERT INTO families (name, join_code)
-    VALUES ('Jones Family (test)', 'TESTER')
+    VALUES ('The Joneses', 'TESTER')
     RETURNING id INTO jones;
   ELSE
     UPDATE families SET join_code = 'TESTER' WHERE id = jones;
@@ -100,5 +100,5 @@ END $$;
 -- Check:
 SELECT f.name AS family, p.username, p.total_points
 FROM profiles p JOIN families f ON f.id = p.family_id
-WHERE f.name = 'Jones Family (test)'
+WHERE f.name = 'The Joneses'
 ORDER BY p.total_points DESC;

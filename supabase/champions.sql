@@ -30,7 +30,7 @@ SET champions = '[
     {"year": "2024", "winner": "Mom",   "note": ""},
     {"year": "2023", "winner": "Jerry", "note": ""}
   ]'::jsonb
-WHERE name = 'Jones Family (test)';
+WHERE name = 'The Joneses';
 
 -- Check:
 -- SELECT name, champions FROM families;
