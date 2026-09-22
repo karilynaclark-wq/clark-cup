@@ -54,8 +54,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (data) setProfile(data as Profile);
   };
 
+  // Read the session fresh rather than from state: signup calls this right
+  // after creating the profile, before the new session has reached state,
+  // so the state copy is still null and the refresh would silently skip.
   const refreshProfile = async () => {
-    if (session) await fetchProfile(session.user.id);
+    const { data: { session: current } } = await supabase.auth.getSession();
+    if (current) await fetchProfile(current.user.id);
   };
 
   const signOut = async () => {
