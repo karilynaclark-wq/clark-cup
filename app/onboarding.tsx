@@ -73,10 +73,28 @@ export default function OnboardingScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const [page, setPage] = useState(0);
 
-  const handleScroll = (e: any) => {
-    const newPage = Math.round(e.nativeEvent.contentOffset.x / W);
-    setPage(newPage);
-  };
+  // The background (the strips above and below the slides) used to switch
+  // only once a swipe settled, so it lagged a beat behind whenever two
+  // neighbouring slides had different colours. It now blends continuously
+  // with the scroll position, and the page-dependent bits (dots, button,
+  // Skip) flip as soon as a swipe passes halfway.
+  const scrollX = useRef(new Animated.Value(0)).current;
+  const bgColor = scrollX.interpolate({
+    inputRange: SLIDES.map((_, i) => i * W),
+    outputRange: SLIDES.map((s) => s.bg),
+    extrapolate: 'clamp',
+  });
+  const pageRef = useRef(0);
+  const onScroll = Animated.event(
+    [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+    {
+      useNativeDriver: false,
+      listener: (e: any) => {
+        const p = Math.min(SLIDES.length - 1, Math.max(0, Math.round(e.nativeEvent.contentOffset.x / W)));
+        if (p !== pageRef.current) { pageRef.current = p; setPage(p); }
+      },
+    },
+  );
 
   const next = () => {
     if (page < SLIDES.length - 1) {
@@ -94,7 +112,8 @@ export default function OnboardingScreen() {
   const slide = SLIDES[page];
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: slide.bg }]} edges={['top', 'bottom']}>
+    <Animated.View style={[styles.container, { backgroundColor: bgColor }]}>
+    <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
       <StatusBar style={slide.bg === C.ink || slide.bg === C.green ? 'light' : 'dark'} />
 
       {/* Skip */}
@@ -103,12 +122,12 @@ export default function OnboardingScreen() {
       </TouchableOpacity>
 
       {/* Slides */}
-      <ScrollView
-        ref={scrollRef}
+      <Animated.ScrollView
+        ref={scrollRef as any}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
-        onMomentumScrollEnd={handleScroll}
+        onScroll={onScroll}
         scrollEventThrottle={16}
         style={{ flex: 1 }}
       >
@@ -119,7 +138,7 @@ export default function OnboardingScreen() {
             <Text style={[styles.slideSubtitle, { color: s.subColor }]}>{s.subtitle}</Text>
           </View>
         ))}
-      </ScrollView>
+      </Animated.ScrollView>
 
       {/* Dots */}
       <View style={styles.dotsRow}>
@@ -149,6 +168,7 @@ export default function OnboardingScreen() {
       </View>
 
     </SafeAreaView>
+    </Animated.View>
   );
 }
 
