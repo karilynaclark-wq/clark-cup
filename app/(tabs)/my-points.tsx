@@ -105,7 +105,7 @@ const SLOT_META = [
 ];
 
 export default function PointsScreen() {
-  const { profile: myProfile, user, refreshProfile } = useAuth();
+  const { profile: myProfile, user, refreshProfile, familyName } = useAuth();
   const [flatRows,   setFlatRows]   = useState<FlatRow[]>([]);
   const [profiles,   setProfiles]   = useState<Profile[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -348,7 +348,7 @@ export default function PointsScreen() {
         <View style={styles.headerTop}>
           <View style={styles.logoRow}>
             <View style={styles.logoIcon}><Text style={styles.logoEmoji}>🏆</Text></View>
-            <Text style={styles.logoText}>Family Cup</Text>
+            <Text style={styles.logoText} numberOfLines={1}>{familyName ?? 'Family Cup'}</Text>
           </View>
           <Text style={styles.headerYear}>2026</Text>
         </View>

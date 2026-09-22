@@ -39,7 +39,7 @@ const SUPPORT_URL = 'https://www.notion.so/Family-Cup-Support-3582a5e6a849801cb7
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { profile, user, refreshProfile, signOut } = useAuth();
+  const { profile, user, refreshProfile, signOut, familyName } = useAuth();
 
   const [username,        setUsername]        = useState('');
   const [address,         setAddress]         = useState('');
@@ -187,7 +187,7 @@ export default function ProfileScreen() {
             <View style={styles.headerTop}>
               <View style={styles.logoRow}>
                 <View style={styles.logoIcon}><Text style={styles.logoEmoji}>🏆</Text></View>
-                <Text style={styles.logoText}>Family Cup</Text>
+                <Text style={styles.logoText} numberOfLines={1}>{familyName ?? 'Family Cup'}</Text>
               </View>
               <Text style={styles.headerYear}>2026</Text>
             </View>

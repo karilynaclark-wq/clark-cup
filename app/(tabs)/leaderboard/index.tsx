@@ -44,7 +44,7 @@ function personColor(name: string, index: number) {
 const CHART_H = 140; // px height of chart area
 
 export default function LeaderboardScreen() {
-  const { profile: myProfile } = useAuth();
+  const { profile: myProfile, familyName } = useAuth();
   const [profiles, setProfiles]   = useState<Profile[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const router = useRouter();
@@ -115,7 +115,7 @@ export default function LeaderboardScreen() {
           <View style={styles.headerTop}>
             <View style={styles.logoRow}>
               <View style={styles.logoIcon}><Text style={styles.logoEmoji}>🏆</Text></View>
-              <Text style={styles.logoText}>Family Cup</Text>
+              <Text style={styles.logoText} numberOfLines={1}>{familyName ?? 'Family Cup'}</Text>
             </View>
             <Text style={styles.headerYear}>2026</Text>
           </View>

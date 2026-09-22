@@ -104,7 +104,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 export default function HomeScreen() {
-  const { profile } = useAuth();
+  const { profile, familyName } = useAuth();
   const [recentActivity,   setRecentActivity]   = useState<ActivityItem[]>([]);
   const [refreshing,       setRefreshing]       = useState(false);
   const [events,           setEvents]           = useState<UpcomingEvent[]>([]);
@@ -232,7 +232,7 @@ export default function HomeScreen() {
           <View style={styles.headerTop}>
             <View style={styles.logoRow}>
               <View style={styles.logoIcon}><Text style={styles.logoEmoji}>🏆</Text></View>
-              <Text style={styles.logoText}>Family Cup</Text>
+              <Text style={styles.logoText} numberOfLines={1}>{familyName ?? 'Family Cup'}</Text>
             </View>
             <Text style={styles.headerYear}>2026</Text>
           </View>

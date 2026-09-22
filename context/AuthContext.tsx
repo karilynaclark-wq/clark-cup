@@ -6,6 +6,7 @@ type AuthContextType = {
   session: Session | null;
   user: User | null;
   profile: Profile | null;
+  familyName: string | null;
   loading: boolean;
   refreshProfile: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -15,6 +16,7 @@ const AuthContext = createContext<AuthContextType>({
   session: null,
   user: null,
   profile: null,
+  familyName: null,
   loading: true,
   refreshProfile: async () => {},
   signOut: async () => {},
@@ -23,6 +25,7 @@ const AuthContext = createContext<AuthContextType>({
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [familyName, setFamilyName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -38,6 +41,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         fetchProfile(session.user.id);
       } else {
         setProfile(null);
+        setFamilyName(null);
       }
     });
 
@@ -47,11 +51,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const fetchProfile = async (userId: string) => {
     const { data, error } = await supabase
       .from('profiles')
-      .select('*')
+      .select('*, families(name)')
       .eq('auth_user_id', userId)
       .maybeSingle();
     if (error) console.error('fetchProfile error:', error.message);
-    if (data) setProfile(data as Profile);
+    if (data) {
+      setProfile(data as Profile);
+      // Shown in every tab's header in place of the app name.
+      setFamilyName((data as any).families?.name ?? null);
+    }
   };
 
   // Read the session fresh rather than from state: signup calls this right
@@ -67,7 +75,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ session, user: session?.user ?? null, profile, loading, refreshProfile, signOut }}>
+    <AuthContext.Provider value={{ session, user: session?.user ?? null, profile, familyName, loading, refreshProfile, signOut }}>
       {children}
     </AuthContext.Provider>
   );
