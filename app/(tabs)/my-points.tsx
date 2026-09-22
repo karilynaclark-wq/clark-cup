@@ -215,6 +215,19 @@ export default function PointsScreen() {
     } catch { return null; }
   };
 
+  // ── Confirmation ──────────────────────────────────────────────
+  // Shown after points land, naming who got them so it is clear it worked.
+  const confirmAdded = (userIds: string[], points: number, what: string) => {
+    const names = userIds
+      .map((id) => (id === myProfile?.id ? 'You' : profiles.find((p) => p.id === id)?.username))
+      .filter(Boolean) as string[];
+    const who = names.length <= 1
+      ? (names[0] ?? 'Someone')
+      : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+    const each = names.length > 1 ? ' each' : '';
+    Alert.alert('Points added 🏆', `${who}${each} got ${points} points for ${what}.`);
+  };
+
   // ── Sunday Call ───────────────────────────────────────────────
   const handleSundaySubmit = async () => {
     if (selectedUsers.size === 0) { Alert.alert('Select at least one person'); return; }
@@ -225,6 +238,7 @@ export default function PointsScreen() {
     if (error) { Alert.alert('Error', error.message); return; }
     setSundayModal(false); setSelectedUsers(new Set());
     await Promise.all([fetchData(), refreshProfile()]);
+    confirmAdded(rows.map((r) => r.user_id), quickAdds[0].points, quickAdds[0].label);
   };
 
   // ── Photo Contest ─────────────────────────────────────────────
@@ -239,8 +253,10 @@ export default function PointsScreen() {
     });
     setSubmittingPhoto(false);
     if (error) { Alert.alert('Error', error.message); return; }
+    const winner = photoWinner;
     setPhotoModal(false); setPhotoWinner(null); setContestPhotoUri(null);
     await Promise.all([fetchData(), refreshProfile()]);
+    confirmAdded([winner], quickAdds[1].points, quickAdds[1].label);
   };
 
   // ── Board Game Night ─────────────────────────────────────────
@@ -255,6 +271,7 @@ export default function PointsScreen() {
     if (error) { Alert.alert('Error', error.message); return; }
     setBoardGameModal(false); setSelectedBoardGameUsers(new Set());
     await Promise.all([fetchData(), refreshProfile()]);
+    confirmAdded(rows.map((r) => r.user_id), quickAdds[2].points, quickAdds[2].label);
   };
 
   // ── Recipe Share ──────────────────────────────────────────────
@@ -269,6 +286,7 @@ export default function PointsScreen() {
     if (error) { Alert.alert('Error', error.message); return; }
     setRecipeModal(false); setSelectedRecipeUsers(new Set());
     await Promise.all([fetchData(), refreshProfile()]);
+    confirmAdded(rows.map((r) => r.user_id), quickAdds[3].points, quickAdds[3].label);
   };
 
   // ── Custom submit ─────────────────────────────────────────────
@@ -289,8 +307,10 @@ export default function PointsScreen() {
     });
     setSubmitting(false);
     if (error) { Alert.alert('Error', 'Could not submit points.'); return; }
+    const added = customName.trim();
     setSubmitModal(false); resetForm();
     await Promise.all([fetchData(), refreshProfile()]);
+    confirmAdded([myProfile.id], pts, added);
   };
 
   // ── Render ────────────────────────────────────────────────────
