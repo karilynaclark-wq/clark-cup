@@ -99,7 +99,10 @@ export default function SignupScreen() {
       const { data: existingProfile } = await supabase
         .from('profiles')
         .select('id')
-        .eq('username', username.trim())
+        // ilike with no wildcards is an exact match that ignores case, so
+        // someone typing 'kyle' still claims the 'Kyle' profile their family
+        // set up for them, along with its point history.
+        .ilike('username', username.trim())
         .eq('family_id', familyId)
         .is('auth_user_id', null)
         .maybeSingle();
@@ -212,10 +215,15 @@ export default function SignupScreen() {
             style={styles.input}
             value={username}
             onChangeText={setUsername}
-            placeholder="e.g. Kari Clark"
+            placeholder={mode === 'join' ? 'e.g. Kyle' : 'e.g. Kari Clark'}
             placeholderTextColor={COLORS.textSecondary}
             autoCorrect={false}
           />
+          {mode === 'join' && (
+            <Text style={styles.hint}>
+              If your family already added you, use that same name to pick up your points.
+            </Text>
+          )}
 
           <Text style={styles.label}>Email</Text>
           <TextInput
