@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -51,6 +52,22 @@ export default function ProfileScreen() {
   const [newPassword,     setNewPassword]     = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changingPw,      setChangingPw]      = useState(false);
+
+  // iOS can only silence the whole app, so these let someone keep the
+  // reminders they care about and drop the ones they don't.
+  const NOTIFY_KINDS: { key: string; label: string; detail: string }[] = [
+    { key: 'points', label: 'New points',      detail: 'When anyone in the family earns points' },
+    { key: 'events', label: 'Event reminders', detail: 'The day before something is happening' },
+    { key: 'sunday', label: 'Sunday call',     detail: '30 minutes before the family call' },
+    { key: 'photo',  label: 'Photo contest',   detail: 'Submit and vote deadline reminders' },
+  ];
+  const notify = (profile as any)?.notify ?? {};
+  const setNotify = async (key: string, on: boolean) => {
+    const next = { ...notify, [key]: on };
+    const { error } = await supabase.from('profiles').update({ notify: next }).eq('id', profile!.id);
+    if (error) { Alert.alert('Error', 'Could not save that setting.'); return; }
+    await refreshProfile();
+  };
 
   useEffect(() => {
     if (!profile?.family_id) return;
@@ -312,6 +329,24 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* ── NOTIFICATIONS ────────────────────────────── */}
+          <Text style={[styles.sectionLabel, { marginTop: 28, paddingHorizontal: 20 }]}>Notifications</Text>
+          <View style={styles.notifyCard}>
+            {NOTIFY_KINDS.map((k, i) => (
+              <View key={k.key} style={[styles.notifyRow, i < NOTIFY_KINDS.length - 1 && styles.notifyBorder]}>
+                <View style={{ flex: 1, paddingRight: 12 }}>
+                  <Text style={styles.notifyLabel}>{k.label}</Text>
+                  <Text style={styles.notifyDetail}>{k.detail}</Text>
+                </View>
+                <Switch
+                  value={notify[k.key] !== false}
+                  onValueChange={(on) => setNotify(k.key, on)}
+                  trackColor={{ true: C.green }}
+                />
+              </View>
+            ))}
+          </View>
+
           {/* ── DELETE ACCOUNT ───────────────────────────── */}
           <View style={[styles.btnWrap, { paddingTop: 4, paddingBottom: 8 }]}>
             <TouchableOpacity onPress={handleDeleteAccount} disabled={deleting} activeOpacity={0.7}>
@@ -402,6 +437,11 @@ const styles = StyleSheet.create({
   familyCodeLabel:{ fontSize: 11, fontWeight: '600', color: C.inkMid, letterSpacing: 0.6, marginBottom: 4 },
   familyCode:    { fontSize: 30, fontWeight: '800', color: C.green, letterSpacing: 6, marginBottom: 10 },
   familyHint:    { fontSize: 12, color: C.inkMid, lineHeight: 18 },
+  notifyCard:    { backgroundColor: C.card, borderRadius: 18, marginHorizontal: 20, borderWidth: 1, borderColor: C.border, overflow: 'hidden' },
+  notifyRow:     { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 16 },
+  notifyBorder:  { borderBottomWidth: 1, borderBottomColor: C.border },
+  notifyLabel:   { fontSize: 15, fontWeight: '600', color: C.ink },
+  notifyDetail:  { fontSize: 12, color: C.inkMid, marginTop: 2 },
   deleteText:    { color: '#b3261e', fontSize: 13, fontWeight: '500', textAlign: 'center', paddingVertical: 12 },
 
   // Legal footer

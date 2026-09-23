@@ -7,6 +7,8 @@
 //             batched into a single notification however many there are
 //   events  — daily:       upcoming events that start tomorrow
 //   sunday  — Sundays:     30 min before the 11:00 AM Chicago family call
+//   photo_submit — Mondays 5pm, in each person's own time zone
+//   photo_vote   — Tuesdays 5pm, in each person's own time zone
 //
 // Everyone with a saved push token gets every notification. Copy is built
 // per recipient, so the Sunday reminder can greet each person by name.
@@ -23,7 +25,12 @@ const CATEGORY_PHRASE: Record<string, string> = {
   miscellaneous: 'being awesome',
 };
 
-type Recipient = { token: string; username: string };
+type Recipient = {
+  token: string;
+  username: string;
+  timezone: string | null;
+  notify: Record<string, boolean> | null;
+};
 type Message   = { title: string; body: string };
 
 // Wall-clock parts in Chicago, whatever the server's own clock says.
@@ -41,6 +48,18 @@ function chicagoNow() {
     minute:  Number(get('minute')),
     weekday: get('weekday'),
   };
+}
+
+// Wall-clock weekday and hour in someone's own time zone, for the photo
+// contest reminders. An unknown zone falls back to Chicago so the reminder
+// still goes out rather than silently never firing.
+function localParts(timezone: string | null) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone || CHICAGO,
+    hour: '2-digit', weekday: 'short', hour12: false,
+  }).formatToParts(new Date());
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
+  return { hour: Number(get('hour')), weekday: get('weekday') };
 }
 
 function addDays(isoDate: string, days: number) {
@@ -92,13 +111,22 @@ Deno.serve(async (req) => {
   // Everyone who has opened the app and granted permission.
   const { data: people, error: peopleErr } = await supabase
     .from('profiles')
-    .select('username, push_token')
+    .select('username, push_token, timezone, notify')
     .not('push_token', 'is', null);
   if (peopleErr) return Response.json({ error: peopleErr.message }, { status: 500 });
 
-  const recipients: Recipient[] = (people ?? [])
+  const everyone: Recipient[] = (people ?? [])
     .filter((p) => p.push_token)
-    .map((p) => ({ token: p.push_token as string, username: p.username as string }));
+    .map((p) => ({
+      token: p.push_token as string,
+      username: p.username as string,
+      timezone: (p as any).timezone ?? null,
+      notify: (p as any).notify ?? null,
+    }));
+
+  // Opt-out, not opt-in: a missing preference means they want it.
+  const wants = (key: string) => everyone.filter((r) => r.notify?.[key] !== false);
+  const recipients = wants(job === 'points' ? 'points' : job === 'events' ? 'events' : 'sunday');
 
   if (job === 'points') {
     // Everything logged since the last run, so a flurry of entries becomes one buzz.
@@ -172,6 +200,25 @@ Deno.serve(async (req) => {
       title: `Happy Sunday, ${r.username}!`,
       body:  'The family call is in 30 minutes — talk soon.',
     }));
+    return Response.json({ job, ...result });
+  }
+
+  // Photo contest deadlines, at 5pm wherever each person is. Cron wakes this
+  // every hour; each run notifies only the people for whom it is now 5pm on
+  // the right day.
+  if (job === 'photo_submit' || job === 'photo_vote') {
+    const wantDay = job === 'photo_submit' ? 'Mon' : 'Tue';
+    const due = wants('photo').filter((r) => {
+      const { hour, weekday } = localParts(r.timezone);
+      return weekday === wantDay && hour === 17;
+    });
+    if (due.length === 0) return Response.json({ skipped: 'nobody at 5pm right now' });
+
+    const message: Message = job === 'photo_submit'
+      ? { title: '📸 Submit your photo!', body: 'Reminder: the deadline to submit your photo is today.' }
+      : { title: '🗳️ Vote!',              body: 'Reminder: the deadline to vote on a photo is today.' };
+
+    const result = await pushEach(due, () => message);
     return Response.json({ job, ...result });
   }
 

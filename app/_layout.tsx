@@ -43,7 +43,9 @@ async function registerPushToken(userId: string) {
     const { supabase } = await import('@/lib/supabase');
     await supabase
       .from('profiles')
-      .update({ push_token: token })
+      // The photo contest reminders fire at 5pm where each person is, so
+      // the server needs to know their zone.
+      .update({ push_token: token, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone })
       .eq('auth_user_id', userId);
   } catch (e) {
     console.log('Push token error:', e);

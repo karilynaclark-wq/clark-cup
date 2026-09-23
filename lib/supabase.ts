@@ -24,6 +24,8 @@ export type Profile = {
   address: string | null;
   phone: string | null;
   total_points: number;
+  timezone: string | null;
+  notify: Record<string, boolean> | null;
   created_at: string;
 };
 
