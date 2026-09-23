@@ -142,7 +142,14 @@ export default function HomeScreen() {
     // A failed query left the list empty and looked identical to "no events",
     // which made a broken schema look like lost data.
     if (eventsError) console.error('upcoming_events fetch failed:', eventsError.message);
-    if (eventsData)  setEvents(eventsData as UpcomingEvent[]);
+    // Drop events that have already finished: a multi-day event stays until
+    // its end_date passes, a single-day one until its own date does.
+    if (eventsData) {
+      const today = toISODate(new Date());
+      setEvents((eventsData as UpcomingEvent[]).filter(
+        (e) => (e.end_date ?? e.event_date) >= today,
+      ));
+    }
 
     if (allProfiles) {
       setFamily(allProfiles as FamilyMember[]);
