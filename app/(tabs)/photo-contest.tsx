@@ -32,7 +32,7 @@ const C = {
 };
 
 const { width: SCREEN_W } = Dimensions.get('window');
-const PHOTO_W = SCREEN_W - 40;
+const CARD_W = Math.min(260, SCREEN_W * 0.62);
 
 type Entry = {
   id: string;
@@ -197,8 +197,7 @@ export default function PhotoContestScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.inkDim} />}
       >
         <Text style={styles.rules}>
-          One photo each per week, in by Monday. Heart your favourite by Tuesday —
-          the most hearts wins 100 points. Ties all win.
+          Submit your photo by EOD Monday, then vote by EOD Tuesday.
         </Text>
 
         {loading && <ActivityIndicator style={{ marginTop: 32 }} color={C.green} />}
@@ -206,62 +205,80 @@ export default function PhotoContestScreen() {
         {!loading && weeks.map((week) => {
           const weekEntries = entries.filter((e) => e.week_start === week);
           const counts = weekEntries.map((e) => votersFor(e.id).length);
-          const most = Math.max(0, ...counts);
-          const open = votingOpen(week);
+          const most   = Math.max(0, ...counts);
+          const open   = votingOpen(week);
+          const mine   = weekEntries.some((e) => e.profile_id === profile?.id);
 
           return (
             <View key={week} style={styles.weekBlock}>
               <View style={styles.weekHeader}>
-                <View>
-                  <Text style={styles.weekTitle}>{weekLabel(week)}</Text>
-                  {!open && most > 0 && (
-                    <Text style={styles.weekClosed}>
-                      Voting closed · {counts.filter((c) => c === most).length > 1 ? 'tied winners' : 'winner'} below
-                    </Text>
-                  )}
-                </View>
-                {week === thisWeek && !iEnteredThisWeek && (
-                  <TouchableOpacity style={styles.addBtn} onPress={addPhoto} disabled={uploading}>
-                    <Text style={styles.addBtnText}>{uploading ? 'Adding…' : '+ Add yours'}</Text>
-                  </TouchableOpacity>
+                <Text style={styles.weekTitle}>{weekLabel(week)}</Text>
+                {open ? (
+                  <View style={styles.thisWeekPill}><Text style={styles.thisWeekText}>THIS WEEK</Text></View>
+                ) : (
+                  <Text style={styles.closedText}>Voting closed</Text>
                 )}
               </View>
 
-              {weekEntries.length === 0 && (
-                <View style={styles.emptyCard}>
-                  <Text style={styles.emptyText}>
-                    {week === thisWeek ? 'No photos yet this week — be first!' : 'No photos that week.'}
-                  </Text>
-                </View>
-              )}
-
-              {weekEntries.map((entry) => {
-                const voters  = votersFor(entry.id);
-                const iVoted  = votes.some((v) => v.entry_id === entry.id && v.voter_id === profile?.id);
-                const winning = most > 0 && voters.length === most;
-                return (
-                  <View key={entry.id} style={[styles.photoCard, winning && styles.photoCardWin]}>
-                    <Image source={{ uri: entry.photo_url }} style={styles.photo} resizeMode="cover" />
-                    <View style={styles.photoFooter}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.photoBy}>{entry.profiles?.username ?? 'Someone'}</Text>
-                        <Text style={styles.voters} numberOfLines={2}>
-                          {voters.length === 0
-                            ? 'No hearts yet'
-                            : `${voters.length} · ${voters.join(', ')}`}
-                        </Text>
-                      </View>
-                      <TouchableOpacity
-                        onPress={() => toggleVote(entry)}
-                        disabled={!open}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                        accessibilityLabel={iVoted ? 'Remove your heart' : 'Heart this photo'}>
-                        <Text style={[styles.heart, !open && { opacity: 0.35 }]}>{iVoted ? '❤️' : '🤍'}</Text>
-                      </TouchableOpacity>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.row}
+                snapToInterval={CARD_W + 12}
+                decelerationRate="fast"
+              >
+                {/* Only while you still owe a photo for an open week. */}
+                {open && !mine && (
+                  <TouchableOpacity style={styles.addCard} onPress={addPhoto} disabled={uploading} activeOpacity={0.8}>
+                    <View style={styles.addCircle}>
+                      {uploading
+                        ? <ActivityIndicator color={C.ink} />
+                        : <Text style={styles.addPlus}>+</Text>}
                     </View>
-                  </View>
-                );
-              })}
+                    <Text style={styles.addLabel}>{uploading ? 'Adding…' : 'Add your photo'}</Text>
+                  </TouchableOpacity>
+                )}
+
+                {weekEntries.map((entry) => {
+                  const count   = votersFor(entry.id).length;
+                  const iVoted  = votes.some((v) => v.entry_id === entry.id && v.voter_id === profile?.id);
+                  const won     = !open && most > 0 && count === most;
+                  return (
+                    <View key={entry.id} style={styles.card}>
+                      <Image source={{ uri: entry.photo_url }} style={styles.photo} resizeMode="cover" />
+                      <View style={styles.cardFooter}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.cardName} numberOfLines={1}>
+                            {entry.profiles?.username ?? 'Someone'}
+                          </Text>
+                          <Text style={[styles.cardMeta, won && styles.cardMetaWin]} numberOfLines={1}>
+                            {won
+                              ? 'Winner · +100 pts'
+                              : count === 0
+                                ? (open ? 'No votes yet' : 'No votes')
+                                : `${count} ${count === 1 ? 'vote' : 'votes'}`}
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          onPress={() => toggleVote(entry)}
+                          disabled={!open}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          style={styles.voteWrap}
+                          accessibilityLabel={iVoted ? 'Remove your vote' : 'Vote for this photo'}>
+                          {count > 0 && <Text style={styles.voteCount}>{count}</Text>}
+                          <Text style={[styles.heart, !open && !won && { opacity: 0.3 }]}>
+                            {iVoted || won ? '❤️' : '🤍'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                })}
+
+                {weekEntries.length === 0 && !open && (
+                  <View style={styles.emptyCard}><Text style={styles.emptyText}>No photos that week.</Text></View>
+                )}
+              </ScrollView>
             </View>
           );
         })}
@@ -277,26 +294,50 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20, paddingVertical: 12,
   },
   back:     { fontSize: 16, color: C.accent, fontWeight: '600' },
-  navTitle: { fontSize: 16, fontWeight: '700', color: C.ink },
-  scroll:   { padding: 20, paddingBottom: 48 },
+  navTitle: { fontSize: 17, fontWeight: '700', color: C.ink },
+  scroll:   { paddingBottom: 40 },
 
-  rules: { fontSize: 13, color: C.inkMid, lineHeight: 19, marginBottom: 20 },
+  rules: { fontSize: 14, color: C.inkMid, lineHeight: 20, paddingHorizontal: 20, marginBottom: 24 },
 
   weekBlock:  { marginBottom: 28 },
-  weekHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  weekClosed: { fontSize: 12, color: C.inkMid, marginTop: 2 },
-  weekTitle:  { fontSize: 18, fontWeight: '700', color: C.ink, letterSpacing: -0.3 },
-  addBtn:     { backgroundColor: C.card, borderWidth: 1, borderColor: C.borderMd, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 7 },
-  addBtnText: { fontSize: 13, fontWeight: '600', color: C.ink },
+  weekHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, marginBottom: 12,
+  },
+  weekTitle:  { fontSize: 20, fontWeight: '700', color: C.ink, letterSpacing: -0.4 },
+  thisWeekPill: { backgroundColor: C.greenBg, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 },
+  thisWeekText: { fontSize: 11, fontWeight: '700', color: C.green, letterSpacing: 0.6 },
+  closedText:   { fontSize: 13, color: C.inkMid },
 
-  emptyCard: { backgroundColor: C.card, borderRadius: 16, padding: 20, alignItems: 'center', borderWidth: 1, borderColor: C.border },
+  row: { paddingHorizontal: 20, gap: 12 },
+
+  addCard: {
+    width: CARD_W, aspectRatio: 0.82, borderRadius: 18,
+    backgroundColor: 'rgba(28,26,22,0.06)',
+    alignItems: 'center', justifyContent: 'center', gap: 14,
+  },
+  addCircle: {
+    width: 56, height: 56, borderRadius: 28, backgroundColor: C.card,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  addPlus:  { fontSize: 26, color: C.ink, marginTop: -2 },
+  addLabel: { fontSize: 14, fontWeight: '500', color: C.ink },
+
+  card: {
+    width: CARD_W, borderRadius: 18, overflow: 'hidden', backgroundColor: C.card,
+  },
+  photo:      { width: '100%', aspectRatio: 1, backgroundColor: '#e8e2d8' },
+  cardFooter: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 8 },
+  cardName:   { fontSize: 15, fontWeight: '700', color: C.ink },
+  cardMeta:   { fontSize: 13, color: C.inkMid, marginTop: 2 },
+  cardMetaWin:{ color: C.green, fontWeight: '600' },
+  voteWrap:   { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  voteCount:  { fontSize: 14, fontWeight: '700', color: C.accent },
+  heart:      { fontSize: 20 },
+
+  emptyCard: {
+    width: CARD_W, aspectRatio: 0.82, borderRadius: 18, backgroundColor: C.card,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.border,
+  },
   emptyText: { fontSize: 13, color: C.inkMid },
-
-  photoCard:    { backgroundColor: C.card, borderRadius: 18, overflow: 'hidden', marginBottom: 14, borderWidth: 1, borderColor: C.border },
-  photoCardWin: { borderColor: C.green, borderWidth: 2 },
-  photo:        { width: '100%', height: PHOTO_W * 0.7, backgroundColor: '#e8e2d8' },
-  photoFooter:  { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12 },
-  photoBy:      { fontSize: 15, fontWeight: '600', color: C.ink },
-  voters:       { fontSize: 12, color: C.inkMid, marginTop: 2 },
-  heart:        { fontSize: 26 },
 });
