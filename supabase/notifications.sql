@@ -67,12 +67,12 @@ SELECT cron.schedule('familycup-events', '0 14 * * *', $$
   );
 $$);
 
--- Sunday call: fires at BOTH 15:30 and 16:30 UTC every Sunday. Exactly one
--- of those is 10:30 AM in Chicago depending on daylight saving; the function
+-- Sunday call: fires at BOTH 14:30 and 15:30 UTC every Sunday. Exactly one
+-- of those is 9:30 AM in Chicago depending on daylight saving; the function
 -- checks the Chicago clock and ignores the other. That is what makes the
 -- reminder land at the same wall-clock time all year, for everyone, no
 -- matter what time zone their phone is in.
-SELECT cron.schedule('familycup-sunday', '30 15,16 * * 0', $$
+SELECT cron.schedule('familycup-sunday', '30 14,15 * * 0', $$
   SELECT net.http_post(
     url     := 'https://<PROJECT_REF>.functions.supabase.co/send-push',
     headers := jsonb_build_object(

@@ -6,7 +6,7 @@
 //   points  — every 5 min: announce any point submissions not yet announced,
 //             batched into a single notification however many there are
 //   events  — daily:       upcoming events that start tomorrow
-//   sunday  — Sundays:     30 min before the 11:00 AM Chicago family call
+//   sunday  — Sundays:     9:30 AM Chicago, the same instant for everyone
 //   photo_submit — Mondays 5pm, in each person's own time zone
 //   photo_vote   — Tuesdays 5pm, in each person's own time zone
 //
@@ -190,10 +190,10 @@ Deno.serve(async (req) => {
   }
 
   if (job === 'sunday') {
-    // Cron fires at both 15:30 and 16:30 UTC so one of them is always 10:30
+    // Cron fires at both 14:30 and 15:30 UTC so one of them is always 9:30
     // in Chicago whichever side of daylight saving we are on. This check
     // discards the one that isn't.
-    if (now.weekday !== 'Sun' || now.hour !== 10 || now.minute >= 45) {
+    if (now.weekday !== 'Sun' || now.hour !== 9 || now.minute >= 45) {
       return Response.json({ skipped: `not 10:30 Sunday in Chicago (${now.weekday} ${now.hour}:${now.minute})` });
     }
     const result = await pushEach(recipients, (r) => ({
