@@ -109,6 +109,22 @@ export default function PhotoContestScreen() {
     });
     if (picked.canceled) return;
 
+    // Optional one-liner. Cancel skips the photo entirely; Skip posts it bare.
+    const caption = await new Promise<string | null>((resolve) => {
+      Alert.prompt(
+        'Add a description?',
+        'Optional — a few words about this photo.',
+        [
+          { text: 'Cancel', style: 'cancel', onPress: () => resolve(null) },
+          { text: 'Skip', onPress: () => resolve('') },
+          { text: 'Add', onPress: (text?: string) => resolve((text ?? '').trim()) },
+        ],
+        'plain-text',
+        '',
+      );
+    });
+    if (caption === null) return;
+
     setUploading(true);
     try {
       const uri = picked.assets[0].uri;
@@ -125,6 +141,7 @@ export default function PhotoContestScreen() {
         profile_id: profile!.id,
         week_start: thisWeek,
         photo_url: url,
+        caption: caption || null,
       });
       if (error) throw error;
       await fetchData();
@@ -251,6 +268,9 @@ export default function PhotoContestScreen() {
                           <Text style={styles.cardName} numberOfLines={1}>
                             {entry.profiles?.username ?? 'Someone'}
                           </Text>
+                          {!!entry.caption && (
+                            <Text style={styles.cardCaption} numberOfLines={2}>{entry.caption}</Text>
+                          )}
                           <Text style={[styles.cardMeta, won && styles.cardMetaWin]} numberOfLines={1}>
                             {won
                               ? 'Winner · +100 pts'
@@ -329,6 +349,7 @@ const styles = StyleSheet.create({
   photo:      { width: '100%', aspectRatio: 1, backgroundColor: '#e8e2d8' },
   cardFooter: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 8 },
   cardName:   { fontSize: 15, fontWeight: '700', color: C.ink },
+  cardCaption:{ fontSize: 13, color: C.ink, marginTop: 2 },
   cardMeta:   { fontSize: 13, color: C.inkMid, marginTop: 2 },
   cardMetaWin:{ color: C.green, fontWeight: '600' },
   voteWrap:   { flexDirection: 'row', alignItems: 'center', gap: 4 },

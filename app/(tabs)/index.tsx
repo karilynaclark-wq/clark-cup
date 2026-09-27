@@ -13,7 +13,7 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import { Calendar } from 'react-native-calendars';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
@@ -106,6 +106,24 @@ function avatarColor(name: string) {
 
 const CHICAGO = 'America/Chicago';
 
+// Highlight every day from start to end for the calendar's period marking.
+function rangeMarks(start: Date, end: Date) {
+  const marks: Record<string, any> = {};
+  const day = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const last = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+  while (day <= last) {
+    const iso = toISODate(day);
+    marks[iso] = {
+      color: '#3a6b4a',
+      textColor: '#fff',
+      startingDay: iso === toISODate(start),
+      endingDay: iso === toISODate(last),
+    };
+    day.setDate(day.getDate() + 1);
+  }
+  return marks;
+}
+
 const CARD_W = 232;
 
 // The family call is 10am in Chicago. Everyone should see it in their own
@@ -151,8 +169,8 @@ export default function HomeScreen() {
   const [addEventModal,    setAddEventModal]    = useState(false);
   const [newEventDate,     setNewEventDate]     = useState<Date>(new Date());
   const [newEventEnd,      setNewEventEnd]      = useState<Date>(new Date());
-  const [showDatePicker,   setShowDatePicker]   = useState(false);
-  const [showEndPicker,    setShowEndPicker]    = useState(false);
+  // Tapping a day starts a new range; tapping a later day closes it.
+  const [pickingEnd,       setPickingEnd]       = useState(false);
   const [newEventName,     setNewEventName]     = useState('');
   const [newEventIcon,     setNewEventIcon]     = useState('✈️');
   const [savingEvent,      setSavingEvent]      = useState(false);
@@ -249,8 +267,7 @@ export default function HomeScreen() {
     setAddEventModal(false);
     setNewEventDate(new Date());
     setNewEventEnd(new Date());
-    setShowDatePicker(false);
-    setShowEndPicker(false);
+    setPickingEnd(false);
     setNewEventName('');
     setNewEventIcon('✈️');
     setNewEventFor(defaultEventFor());
@@ -476,7 +493,7 @@ export default function HomeScreen() {
       <Modal visible={addEventModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setAddEventModal(false)}>
         <KeyboardAvoidingView style={styles.modalContainer} behavior={Platform.OS === 'ios' ? undefined : 'height'}>
           <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => { setAddEventModal(false); setNewEventDate(new Date()); setNewEventEnd(new Date()); setShowDatePicker(false); setShowEndPicker(false); setNewEventName(''); setNewEventIcon('✈️'); setNewEventFor(defaultEventFor()); }}>
+            <TouchableOpacity onPress={() => { setAddEventModal(false); setNewEventDate(new Date()); setNewEventEnd(new Date()); setPickingEnd(false); setNewEventName(''); setNewEventIcon('✈️'); setNewEventFor(defaultEventFor()); }}>
               <Text style={styles.modalCancel}>Cancel</Text>
             </TouchableOpacity>
             <Text style={styles.modalTitle}>Add Event</Text>
@@ -485,45 +502,48 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
           <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.modalScroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
-            <Text style={styles.formLabel}>Starts</Text>
-            <TouchableOpacity style={styles.input} onPress={() => { setShowDatePicker(v => !v); setShowEndPicker(false); }}>
-              <Text style={styles.dateValue}>{fmtLong(newEventDate)}</Text>
-            </TouchableOpacity>
-            {showDatePicker && (
-              <DateTimePicker
-                value={newEventDate}
-                mode="date"
-                display="inline"
-                onChange={(_, picked) => {
-                  if (Platform.OS !== 'ios') setShowDatePicker(false);
-                  if (!picked) return;
+            <Text style={styles.formLabel}>Dates</Text>
+            <Calendar
+              current={toISODate(newEventDate)}
+              markingType="period"
+              markedDates={rangeMarks(newEventDate, newEventEnd)}
+              onDayPress={(day: any) => {
+                const [y, m, d] = day.dateString.split('-').map(Number);
+                const picked = new Date(y, m - 1, d);
+                if (!pickingEnd) {
+                  // First tap: start a fresh single-day range.
                   setNewEventDate(picked);
-                  // drag the end along rather than leaving an impossible range
-                  if (picked > newEventEnd) setNewEventEnd(picked);
-                }}
-              />
-            )}
-
-            <Text style={styles.formLabel}>Ends</Text>
-            <TouchableOpacity style={styles.input} onPress={() => { setShowEndPicker(v => !v); setShowDatePicker(false); }}>
-              <Text style={styles.dateValue}>{fmtLong(newEventEnd)}</Text>
-            </TouchableOpacity>
-            {showEndPicker && (
-              <DateTimePicker
-                value={newEventEnd}
-                mode="date"
-                display="inline"
-                minimumDate={newEventDate}
-                onChange={(_, picked) => {
-                  if (Platform.OS !== 'ios') setShowEndPicker(false);
-                  if (picked) setNewEventEnd(picked);
-                }}
-              />
-            )}
+                  setNewEventEnd(picked);
+                  setPickingEnd(true);
+                } else if (picked < newEventDate) {
+                  // Tapped before the start: treat it as a new start.
+                  setNewEventDate(picked);
+                  setNewEventEnd(picked);
+                } else {
+                  setNewEventEnd(picked);
+                  setPickingEnd(false);
+                }
+              }}
+              theme={{
+                calendarBackground: C.card,
+                textSectionTitleColor: C.inkMid,
+                monthTextColor: C.ink,
+                dayTextColor: C.ink,
+                textDisabledColor: C.inkDim,
+                arrowColor: C.ink,
+                todayTextColor: C.accent,
+                textMonthFontWeight: '700',
+                textDayFontSize: 15,
+                textMonthFontSize: 16,
+              }}
+              style={styles.calendar}
+            />
             <Text style={styles.datePreview}>
-              {isSameDay(newEventDate, newEventEnd)
-                ? `Single day \u2014 shows as \u201c${formatEventDate(newEventDate, newEventEnd)}\u201d`
-                : `Shows as \u201c${formatEventDate(newEventDate, newEventEnd)}\u201d`}
+              {pickingEnd
+                ? 'Tap the last day, or save for a single day'
+                : isSameDay(newEventDate, newEventEnd)
+                  ? `Single day \u2014 shows as \u201c${formatEventDate(newEventDate, newEventEnd)}\u201d`
+                  : `Shows as \u201c${formatEventDate(newEventDate, newEventEnd)}\u201d`}
             </Text>
 
             <Text style={styles.formLabel}>Who is it for?</Text>
@@ -645,6 +665,7 @@ const styles = StyleSheet.create({
   modalScroll:    { padding: 20, paddingBottom: 40 },
   formLabel:      { fontSize: 11, fontWeight: '600', color: C.inkDim, marginBottom: 8, marginTop: 20, textTransform: 'uppercase', letterSpacing: 0.8 },
   input:          { backgroundColor: '#f5f0e8', borderRadius: 12, padding: 14, fontSize: 16, color: C.ink, borderWidth: 1, borderColor: 'rgba(28,26,22,0.1)' },
+  calendar:       { borderRadius: 16, overflow: 'hidden', marginBottom: 4 },
   dateValue:      { fontSize: 16, color: C.ink },
   datePreview:    { fontSize: 13, color: C.inkMid, marginTop: 8, fontStyle: 'italic' },
   chipRow:        { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingVertical: 2 },
