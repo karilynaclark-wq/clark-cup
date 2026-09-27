@@ -46,6 +46,14 @@ type UpcomingEvent = {
   profiles?: { username: string } | null;  // joined
 };
 type FamilyMember = { id: string; username: string; total_points: number };
+type PendingRequest = {
+  id: string;
+  requester_id: string;
+  custom_name: string;
+  points: number;
+  created_at: string;
+  profiles?: { username: string } | null;
+};
 type ActivityItem  = PointSubmission & { profiles?: { username: string; avatar_url: string | null } };
 
 const AVATAR_COLORS = ['#d45f2e','#3a6b4a','#7a6abf','#c4743a','#5a7abf','#b45a7a'];
@@ -137,6 +145,8 @@ export default function HomeScreen() {
   const [refreshing,       setRefreshing]       = useState(false);
   const [events,           setEvents]           = useState<UpcomingEvent[]>([]);
   const [family,           setFamily]           = useState<FamilyMember[]>([]);
+  const [pending,          setPending]          = useState<PendingRequest[]>([]);
+  const [myVotes,          setMyVotes]          = useState<Record<string, boolean>>({});
   const [newEventFor,      setNewEventFor]      = useState<string | null>(null);
   const [addEventModal,    setAddEventModal]    = useState(false);
   const [newEventDate,     setNewEventDate]     = useState<Date>(new Date());
@@ -148,7 +158,13 @@ export default function HomeScreen() {
   const [savingEvent,      setSavingEvent]      = useState(false);
 
   const fetchData = useCallback(async () => {
-    const [{ data: activity }, { data: allProfiles }, { data: eventsData, error: eventsError }] = await Promise.all([
+    const [
+      { data: activity },
+      { data: allProfiles },
+      { data: eventsData, error: eventsError },
+      { data: requests },
+      { data: reqVotes },
+    ] = await Promise.all([
       supabase
         .from('point_submissions')
         .select('*, profiles(username, avatar_url)')
@@ -164,6 +180,14 @@ export default function HomeScreen() {
         // so a bare profiles(username) embed is ambiguous and errors.
         .select('*, profiles!profile_id(username)')
         .order('event_date', { ascending: true }),
+      supabase
+        .from('point_requests')
+        .select('id, requester_id, custom_name, points, created_at, profiles!requester_id(username)')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: true }),
+      supabase
+        .from('point_request_votes')
+        .select('request_id, approve, voter_id'),
     ]);
 
     if (activity)    setRecentActivity(activity as ActivityItem[]);
@@ -181,6 +205,14 @@ export default function HomeScreen() {
 
     if (allProfiles) {
       setFamily(allProfiles as FamilyMember[]);
+    }
+    if (requests) setPending(requests as unknown as PendingRequest[]);
+    if (reqVotes && profile) {
+      const mine: Record<string, boolean> = {};
+      for (const v of reqVotes as any[]) {
+        if (v.voter_id === profile.id) mine[v.request_id] = v.approve;
+      }
+      setMyVotes(mine);
     }
   }, [profile]);
 
@@ -224,6 +256,20 @@ export default function HomeScreen() {
     setNewEventFor(defaultEventFor());
     fetchData();
   };
+
+  // Votes are recorded now and tallied by the server at the 48 hour mark,
+  // so nothing is awarded here.
+  const voteOnRequest = async (id: string, approve: boolean) => {
+    if (!profile) return;
+    const { error } = await supabase
+      .from('point_request_votes')
+      .insert({ request_id: id, voter_id: profile.id, approve });
+    if (error) { Alert.alert('Error', 'Could not record that vote.'); return; }
+    setMyVotes((m) => ({ ...m, [id]: approve }));
+  };
+
+  const hoursLeft = (createdAt: string) =>
+    Math.max(0, 48 - Math.floor((Date.now() - new Date(createdAt).getTime()) / 3600000));
 
   const handleDeleteEvent = (ev: UpcomingEvent) => {
     Alert.alert(
@@ -355,6 +401,43 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* ── PENDING POINTS ─────────────────────────────── */}
+        {pending.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Pending Points</Text>
+            <View style={styles.pendingCard}>
+              {pending.map((req, i) => {
+                const voted = myVotes[req.id];
+                const isMine = req.requester_id === profile?.id;
+                return (
+                  <View key={req.id} style={[styles.pendingRow, i < pending.length - 1 && styles.pendingBorder]}>
+                    <View style={{ flex: 1, paddingRight: 10 }}>
+                      <Text style={styles.pendingName}>
+                        {req.profiles?.username ?? 'Someone'} · +{req.points}
+                      </Text>
+                      <Text style={styles.pendingWhat} numberOfLines={2}>{req.custom_name}</Text>
+                      <Text style={styles.pendingClock}>
+                        {hoursLeft(req.created_at)}h left
+                        {isMine ? ' · your request' : voted === undefined ? '' : voted ? ' · you approved' : ' · you declined'}
+                      </Text>
+                    </View>
+                    {!isMine && voted === undefined && (
+                      <View style={styles.pendingBtns}>
+                        <TouchableOpacity style={styles.declineBtn} onPress={() => voteOnRequest(req.id, false)}>
+                          <Text style={styles.declineText}>Decline</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.approveBtn} onPress={() => voteOnRequest(req.id, true)}>
+                          <Text style={styles.approveText}>Approve</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        )}
 
         {/* ── RECENT POINTS ──────────────────────────────── */}
         <View style={styles.section}>
@@ -520,6 +603,17 @@ const styles = StyleSheet.create({
 
   // Upcoming: horizontally scrolling cards
   eventScroll: { gap: 12, paddingRight: 20, paddingVertical: 2 },
+  pendingCard:   { backgroundColor: C.card, borderRadius: 18, marginHorizontal: 20, borderWidth: 1, borderColor: C.border, overflow: 'hidden' },
+  pendingRow:    { flexDirection: 'row', alignItems: 'center', padding: 14 },
+  pendingBorder: { borderBottomWidth: 1, borderBottomColor: C.border },
+  pendingName:   { fontSize: 15, fontWeight: '700', color: C.ink },
+  pendingWhat:   { fontSize: 13, color: C.inkMid, marginTop: 1 },
+  pendingClock:  { fontSize: 11, color: C.inkDim, marginTop: 3 },
+  pendingBtns:   { flexDirection: 'row', gap: 8 },
+  declineBtn:    { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: C.borderMd },
+  declineText:   { fontSize: 13, fontWeight: '600', color: C.inkMid },
+  approveBtn:    { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, backgroundColor: C.green },
+  approveText:   { fontSize: 13, fontWeight: '600', color: '#fff' },
   eventsEmpty: { backgroundColor: C.card, borderRadius: 18, paddingVertical: 22, alignItems: 'center' },
   eventCard:   { width: CARD_W, backgroundColor: C.card, borderRadius: 18, padding: 16 },
   ecTop:       { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 },

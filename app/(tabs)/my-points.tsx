@@ -132,6 +132,7 @@ export default function PointsScreen() {
   const [notes,        setNotes]        = useState('');
   const [photoUri,     setPhotoUri]     = useState<string | null>(null);
   const [submitting,   setSubmitting]   = useState(false);
+  const [asking,       setAsking]       = useState(false);  // Request, not Add
 
   useEffect(() => {
     if (!myProfile?.family_id) return;
@@ -279,17 +280,31 @@ export default function PointsScreen() {
     setSubmitting(true);
     let photoUrl: string | null = null;
     if (photoUri) photoUrl = await uploadPhoto(photoUri);
-    const { error } = await supabase.from('point_submissions').insert({
-      user_id: myProfile.id, category: 'miscellaneous', family_id: myProfile?.family_id,
-      custom_name: customName.trim(), points: pts,
-      photo_url: photoUrl, notes: notes.trim() || null,
-    });
+    const { error } = asking
+      ? await supabase.from('point_requests').insert({
+          family_id: myProfile.family_id, requester_id: myProfile.id,
+          custom_name: customName.trim(), points: pts,
+          photo_url: photoUrl, notes: notes.trim() || null,
+        })
+      : await supabase.from('point_submissions').insert({
+          user_id: myProfile.id, category: 'miscellaneous', family_id: myProfile?.family_id,
+          custom_name: customName.trim(), points: pts,
+          photo_url: photoUrl, notes: notes.trim() || null,
+        });
     setSubmitting(false);
-    if (error) { Alert.alert('Error', 'Could not submit points.'); return; }
+    if (error) { Alert.alert('Error', asking ? 'Could not send that request.' : 'Could not submit points.'); return; }
     const added = customName.trim();
+    const wasAsking = asking;
     setSubmitModal(false); resetForm();
     await Promise.all([fetchData(), refreshProfile()]);
-    confirmAdded([myProfile.id], pts, added);
+    if (wasAsking) {
+      Alert.alert(
+        'Request sent 🙋',
+        `Your family has been asked about ${pts} points for ${added}. It is settled in 48 hours — approved unless more of them decline than approve.`,
+      );
+    } else {
+      confirmAdded([myProfile.id], pts, added);
+    }
   };
 
   // ── Render ────────────────────────────────────────────────────
@@ -362,9 +377,14 @@ export default function PointsScreen() {
 
       {/* Submit button */}
       <View style={styles.submitWrap}>
-        <TouchableOpacity style={styles.submitBtn} onPress={() => setSubmitModal(true)} activeOpacity={0.8}>
+        <View style={styles.actionRow}>
+        <TouchableOpacity style={styles.submitBtn} onPress={() => { setAsking(false); setSubmitModal(true); }} activeOpacity={0.8}>
           <Text style={styles.submitBtnText}>+ Add Points</Text>
         </TouchableOpacity>
+        <TouchableOpacity style={styles.requestBtn} onPress={() => { setAsking(true); setSubmitModal(true); }} activeOpacity={0.8}>
+          <Text style={styles.requestBtnText}>Request Points</Text>
+        </TouchableOpacity>
+        </View>
       </View>
 
       {/* Activity header */}
@@ -612,7 +632,10 @@ const styles = StyleSheet.create({
 
   // Submit button
   submitWrap:    { paddingHorizontal: 20, paddingTop: 14 },
-  submitBtn:     { backgroundColor: C.ink, borderRadius: 22, paddingVertical: 17, alignItems: 'center' },
+  actionRow:     { flexDirection: 'row', gap: 10 },
+  submitBtn:     { flex: 1, backgroundColor: C.ink, borderRadius: 22, paddingVertical: 17, alignItems: 'center' },
+  requestBtn:    { flex: 1, backgroundColor: C.card, borderWidth: 1, borderColor: C.ink, borderRadius: 22, paddingVertical: 17, alignItems: 'center' },
+  requestBtnText:{ color: C.ink, fontSize: 16, fontWeight: '700' },
   submitBtnText: { color: '#fff', fontSize: 15, fontWeight: '600', letterSpacing: 0.1 },
 
   // Activity list

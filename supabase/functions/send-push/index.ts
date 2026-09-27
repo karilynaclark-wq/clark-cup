@@ -10,6 +10,7 @@
 //   photo_submit — Mondays 5pm, in each person's own time zone
 //   photo_vote   — Tuesdays 5pm, in each person's own time zone
 //   photo_award  — Wednesdays: 100 points to the most-hearted photo
+//   requests     — every 10 min: announce new point requests, approve stale ones
 //
 // Everyone with a saved push token gets every notification. Copy is built
 // per recipient, so the Sunday reminder can greet each person by name.
@@ -232,6 +233,76 @@ Deno.serve(async (req) => {
       body:  'The family call is in 30 minutes — talk soon.',
     }));
     return Response.json({ job, ...result });
+  }
+
+  // Point requests: tell the family about new ones, and approve anything
+  // nobody answered within 48 hours.
+  if (job === 'requests') {
+    const { data: fresh } = await supabase
+      .from('point_requests')
+      .select('id, family_id, points, custom_name, profiles!requester_id(username)')
+      .eq('status', 'pending')
+      .is('notified_at', null);
+
+    let announced = 0;
+    for (const r of (fresh ?? []) as any[]) {
+      const audience = wants('points').filter((x) => x.familyId === r.family_id);
+      if (audience.length > 0) {
+        const who = r.profiles?.username ?? 'Someone';
+        await pushEach(audience, () => ({
+          title: '🙋 Points requested',
+          body: `${who} is asking for ${r.points} points for ${r.custom_name}. Approve or decline in the app.`,
+        }));
+        announced += audience.length;
+      }
+      await supabase.from('point_requests')
+        .update({ notified_at: new Date().toISOString() }).eq('id', r.id);
+    }
+
+    // Settle anything that has been open 48 hours. No votes counts as a
+    // yes; a tie goes to the requester; more rejections than approvals is
+    // the only way a request is declined.
+    const cutoff = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
+    const { data: stale } = await supabase
+      .from('point_requests')
+      .select('id, family_id, requester_id, points, custom_name, notes, photo_url')
+      .eq('status', 'pending')
+      .lt('created_at', cutoff);
+
+    let approved = 0, declined = 0;
+    for (const r of (stale ?? []) as any[]) {
+      const { data: cast } = await supabase
+        .from('point_request_votes').select('approve').eq('request_id', r.id);
+      const yes = (cast ?? []).filter((v: any) => v.approve).length;
+      const no  = (cast ?? []).length - yes;
+
+      if (no > yes) {
+        await supabase.from('point_requests')
+          .update({ status: 'declined', resolved_at: new Date().toISOString() })
+          .eq('id', r.id);
+        declined += 1;
+        continue;
+      }
+
+      const { error } = await supabase.from('point_submissions').insert({
+        user_id: r.requester_id,
+        family_id: r.family_id,
+        category: 'miscellaneous',
+        custom_name: r.custom_name,
+        points: r.points,
+        notes: r.notes,
+        photo_url: r.photo_url,
+      });
+      if (error) continue;
+      await supabase.from('point_requests')
+        .update({ status: 'approved', resolved_at: new Date().toISOString() })
+        .eq('id', r.id);
+      approved += 1;
+    }
+
+    if (announced === 0 && approved === 0 && declined === 0)
+      return Response.json({ skipped: 'no requests to handle' });
+    return Response.json({ job, announced, approved, declined });
   }
 
   // Settle the photo contest: 100 points to whoever had the most hearts
