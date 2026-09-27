@@ -18,7 +18,10 @@ export type Profile = {
   id: string;
   auth_user_id: string | null;
   family_id: string | null;
-  username: string;
+  username: string;          // resolved display name: nickname, else first_name
+  first_name: string | null;
+  last_name: string | null;
+  nickname: string | null;
   email: string | null;
   avatar_url: string | null;
   address: string | null;

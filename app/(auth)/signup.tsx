@@ -23,14 +23,15 @@ export default function SignupScreen() {
   const [mode, setMode] = useState<'join' | 'create'>('join');
   const [joinCode, setJoinCode] = useState('');
   const [familyName, setFamilyName] = useState('');
-  const [username, setUsername] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName,  setLastName]  = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSignup = async () => {
-    if (!username || !email || !password || !confirm) {
+    if (!firstName.trim() || !lastName.trim() || !email || !password || !confirm) {
       Alert.alert('Missing fields', 'Please fill in all fields.');
       return;
     }
@@ -70,7 +71,7 @@ export default function SignupScreen() {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { username } },
+      options: { data: { username: firstName.trim() } },
     });
 
     if (error) {
@@ -102,7 +103,7 @@ export default function SignupScreen() {
         // ilike with no wildcards is an exact match that ignores case, so
         // someone typing 'kyle' still claims the 'Kyle' profile their family
         // set up for them, along with its point history.
-        .ilike('username', username.trim())
+        .ilike('username', firstName.trim())
         .eq('family_id', familyId)
         .is('auth_user_id', null)
         .maybeSingle();
@@ -111,7 +112,12 @@ export default function SignupScreen() {
         // Claim the existing profile — link it to this auth account
         const { error: claimError } = await supabase
           .from('profiles')
-          .update({ auth_user_id: data.user.id, email: email.trim().toLowerCase() })
+          .update({
+            auth_user_id: data.user.id,
+            email: email.trim().toLowerCase(),
+            first_name: firstName.trim(),
+            last_name: lastName.trim(),
+          })
           .eq('id', existingProfile.id);
         if (claimError) {
           setLoading(false);
@@ -122,7 +128,11 @@ export default function SignupScreen() {
         // No existing profile — create a fresh one
         const { error: profileError } = await supabase.from('profiles').insert({
           auth_user_id: data.user.id,
-          username: username.trim(),
+          // username is the resolved display name; a nickname set later on
+          // Profile takes its place.
+          username: firstName.trim(),
+          first_name: firstName.trim(),
+          last_name: lastName.trim(),
           email: email.trim().toLowerCase(),
           family_id: familyId,
         });
@@ -210,20 +220,32 @@ export default function SignupScreen() {
             </>
           )}
 
-          <Text style={styles.label}>Display Name</Text>
+          <Text style={styles.label}>First Name</Text>
           <TextInput
             style={styles.input}
-            value={username}
-            onChangeText={setUsername}
-            placeholder={mode === 'join' ? 'e.g. Kyle' : 'e.g. Kari Clark'}
+            value={firstName}
+            onChangeText={setFirstName}
+            placeholder={mode === 'join' ? 'e.g. Kyle' : 'e.g. Kari'}
             placeholderTextColor={COLORS.textSecondary}
+            autoCapitalize="words"
             autoCorrect={false}
           />
           {mode === 'join' && (
             <Text style={styles.hint}>
-              If your family already added you, use that same name to pick up your points.
+              If your family already added you, use that same first name to pick up your points.
             </Text>
           )}
+
+          <Text style={styles.label}>Last Name</Text>
+          <TextInput
+            style={styles.input}
+            value={lastName}
+            onChangeText={setLastName}
+            placeholder="e.g. Clark"
+            placeholderTextColor={COLORS.textSecondary}
+            autoCapitalize="words"
+            autoCorrect={false}
+          />
 
           <Text style={styles.label}>Email</Text>
           <TextInput

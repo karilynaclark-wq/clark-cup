@@ -42,7 +42,9 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { profile, user, refreshProfile, signOut, familyName } = useAuth();
 
-  const [username,        setUsername]        = useState('');
+  const [firstName,       setFirstName]       = useState('');
+  const [lastName,        setLastName]        = useState('');
+  const [nickname,        setNickname]        = useState('');
   const [address,         setAddress]         = useState('');
   const [phone,           setPhone]           = useState('');
   const [avatarUri,       setAvatarUri]       = useState<string | null>(null);
@@ -81,7 +83,9 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     if (profile) {
-      setUsername(profile.username ?? '');
+      setFirstName((profile as any).first_name ?? profile.username ?? '');
+      setLastName((profile as any).last_name ?? '');
+      setNickname((profile as any).nickname ?? '');
       setAddress(profile.address ?? '');
       setPhone(profile.phone ?? '');
       setAvatarUri(profile.avatar_url ?? null);
@@ -111,7 +115,7 @@ export default function ProfileScreen() {
   };
 
   const handleSave = async () => {
-    if (!username.trim()) { Alert.alert('Required', 'Display name cannot be empty.'); return; }
+    if (!firstName.trim()) { Alert.alert('Required', 'First name cannot be empty.'); return; }
     setSaving(true);
     let avatarUrl = profile?.avatar_url ?? null;
     if (avatarUri && avatarUri !== profile?.avatar_url) {
@@ -119,7 +123,12 @@ export default function ProfileScreen() {
       if (uploaded) avatarUrl = uploaded;
     }
     const { error } = await supabase.from('profiles').update({
-      username: username.trim(),
+      // The nickname wins when there is one, otherwise the first name. This
+      // is the name the leaderboard, activity feed and notifications show.
+      username: nickname.trim() || firstName.trim(),
+      first_name: firstName.trim(),
+      last_name: lastName.trim() || null,
+      nickname: nickname.trim() || null,
       address: address.trim() || null,
       phone: phone.trim() || null,
       avatar_url: avatarUrl,
@@ -190,7 +199,10 @@ export default function ProfileScreen() {
     );
   };
 
-  const initials = (username || 'U').split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
+  const displayName = nickname.trim() || firstName.trim() || 'U';
+  const initials =
+    `${firstName.trim()[0] ?? ''}${lastName.trim()[0] ?? ''}`.toUpperCase()
+    || displayName[0].toUpperCase();
   const email    = profile?.email ?? user?.email ?? '—';
 
   return (
@@ -231,13 +243,34 @@ export default function ProfileScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>Profile Info</Text>
             <View style={styles.formCard}>
-              <Field label="Display Name">
+              <Field label="First Name">
                 <TextInput
                   style={styles.fieldInput}
-                  value={username}
-                  onChangeText={setUsername}
-                  placeholder="Your name"
+                  value={firstName}
+                  onChangeText={setFirstName}
+                  placeholder="e.g. Kari"
                   placeholderTextColor={C.inkDim}
+                  autoCapitalize="words"
+                />
+              </Field>
+              <Field label="Last Name">
+                <TextInput
+                  style={styles.fieldInput}
+                  value={lastName}
+                  onChangeText={setLastName}
+                  placeholder="e.g. Clark"
+                  placeholderTextColor={C.inkDim}
+                  autoCapitalize="words"
+                />
+              </Field>
+              <Field label="Nickname (optional)">
+                <TextInput
+                  style={styles.fieldInput}
+                  value={nickname}
+                  onChangeText={setNickname}
+                  placeholder={firstName.trim() || 'What the family calls you'}
+                  placeholderTextColor={C.inkDim}
+                  autoCapitalize="words"
                 />
               </Field>
               <Field label="Address">
