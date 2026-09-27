@@ -311,7 +311,8 @@ Deno.serve(async (req) => {
   if (job === 'photo_award') {
     const week = addDays(now.date, -2); // Wednesday back to Monday
     const [{ data: entries }, { data: votes }, { data: done }] = await Promise.all([
-      supabase.from('photo_entries').select('id, family_id, profile_id').eq('week_start', week),
+      supabase.from('photo_entries')
+        .select('id, family_id, profile_id, profiles!profile_id(username)').eq('week_start', week),
       supabase.from('photo_votes').select('entry_id').eq('week_start', week),
       supabase.from('photo_awards').select('family_id').eq('week_start', week),
     ]);
@@ -331,19 +332,29 @@ Deno.serve(async (req) => {
 
     const rows: any[] = [];
     const marks: any[] = [];
+    const announce: { familyId: string; names: string[]; hearts: number }[] = [];
     for (const [familyId, familyEntries] of byFamily) {
       const top = Math.max(...familyEntries.map((e) => hearts.get(e.id) ?? 0));
       if (top === 0) continue; // nobody voted; nothing to award
-      for (const e of familyEntries.filter((e) => (hearts.get(e.id) ?? 0) === top)) {
+      const winners = familyEntries.filter((e) => (hearts.get(e.id) ?? 0) === top);
+      for (const e of winners) {
         rows.push({
           user_id: e.profile_id,
           family_id: familyId,
           category: 'weekly_photo',
           custom_name: 'Photo contest winner',
           points: 100,
+          // Announced by name below, so keep it out of the points digest
+          // rather than telling everyone twice.
+          notified_at: new Date().toISOString(),
         });
       }
       marks.push({ family_id: familyId, week_start: week });
+      announce.push({
+        familyId,
+        names: winners.map((e: any) => e.profiles?.username).filter(Boolean),
+        hearts: top,
+      });
     }
     if (rows.length === 0) return Response.json({ skipped: `nothing to settle for ${week}` });
 
@@ -354,7 +365,20 @@ Deno.serve(async (req) => {
     const { error: ptsErr } = await supabase.from('point_submissions').insert(rows);
     if (ptsErr) return Response.json({ error: ptsErr.message }, { status: 500 });
 
-    return Response.json({ job, week, winners: rows.length, families: marks.length });
+    // Tell each family who won.
+    let told = 0;
+    for (const a of announce) {
+      const audience = wants('photo').filter((r) => r.familyId === a.familyId);
+      if (audience.length === 0 || a.names.length === 0) continue;
+      const who = joinNames(a.names);
+      const body = a.names.length > 1
+        ? `${who} tied with ${a.hearts} ${a.hearts === 1 ? 'heart' : 'hearts'} each — 100 points apiece.`
+        : `${who} won with ${a.hearts} ${a.hearts === 1 ? 'heart' : 'hearts'} — 100 points.`;
+      const r = await pushEach(audience, () => ({ title: '📸 Photo contest winner', body }));
+      told += r.sent;
+    }
+
+    return Response.json({ job, week, winners: rows.length, families: marks.length, told });
   }
 
   // Photo contest deadlines, at 5pm wherever each person is. Cron wakes this
