@@ -202,6 +202,32 @@ export default function PhotoContestScreen() {
     );
   };
 
+  // Tapping a photo offers the two things you can do with it. Keeping both
+  // behind one tap means the flag is always reachable without putting a
+  // report button permanently on top of family photos.
+  const openPhoto = (entry: Entry) => {
+    const mine   = entry.profile_id === profile?.id;
+    const iVoted = votes.some((v) => v.entry_id === entry.id && v.voter_id === profile?.id);
+    const open   = votingOpen(entry.week_start);
+    const who    = entry.profiles?.username ?? 'this photo';
+
+    const actions: any[] = [];
+    if (open) {
+      actions.push({
+        text: iVoted ? '💔  Remove your heart' : '❤️  Heart this photo',
+        onPress: () => toggleVote(entry),
+      });
+    }
+    actions.push(
+      mine
+        ? { text: '🗑  Remove your photo', style: 'destructive', onPress: () => removeMine(entry) }
+        : { text: '⚑  Report this photo', style: 'destructive', onPress: () => report(entry) },
+    );
+    actions.push({ text: 'Cancel', style: 'cancel' });
+
+    Alert.alert(mine ? 'Your photo' : `${who}'s photo`, undefined, actions);
+  };
+
   // ── Hearting ────────────────────────────────────────────────────
   // One heart per person per week: tapping another photo moves it.
   const toggleVote = async (entry: Entry) => {
@@ -306,18 +332,12 @@ export default function PhotoContestScreen() {
                   const won     = !open && most > 0 && count === most;
                   return (
                     <View key={entry.id} style={styles.card}>
-                      <View>
+                      <TouchableOpacity
+                        activeOpacity={0.9}
+                        onPress={() => openPhoto(entry)}
+                        accessibilityLabel={`Options for ${entry.profiles?.username ?? 'this'} photo`}>
                         <Image source={{ uri: entry.photo_url }} style={styles.photo} resizeMode="cover" />
-                        <TouchableOpacity
-                          style={styles.photoAction}
-                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                          onPress={() => (entry.profile_id === profile?.id ? removeMine(entry) : report(entry))}
-                          accessibilityLabel={entry.profile_id === profile?.id ? 'Remove your photo' : 'Report this photo'}>
-                          <Text style={styles.photoActionText}>
-                            {entry.profile_id === profile?.id ? '✕' : '⚑'}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
+                      </TouchableOpacity>
                       <View style={styles.cardFooter}>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.cardName} numberOfLines={1}>
@@ -401,12 +421,6 @@ const styles = StyleSheet.create({
   card: {
     width: CARD_W, borderRadius: 18, overflow: 'hidden', backgroundColor: C.card,
   },
-  photoAction: {
-    position: 'absolute', top: 8, right: 8,
-    width: 30, height: 30, borderRadius: 15,
-    backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center',
-  },
-  photoActionText: { color: '#fff', fontSize: 14, fontWeight: '600' },
   photo:      { width: '100%', aspectRatio: 1, backgroundColor: '#e8e2d8' },
   cardFooter: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 8 },
   cardName:   { fontSize: 15, fontWeight: '700', color: C.ink },

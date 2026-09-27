@@ -18,9 +18,10 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { COLORS } from '@/constants/Colors';
 
-// Apple's standard EULA, which applies to every App Store app unless the
-// developer supplies their own.
-const TERMS_URL = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
+// Must be terms that state there is no tolerance for objectionable
+// content -- that clause is what App Store guideline 1.2 requires, and the
+// checkbox only needs to link to it.
+const TERMS_URL = 'https://www.notion.so/Family-Cup-Terms-of-Use';
 
 export default function SignupScreen() {
   const router = useRouter();
@@ -303,10 +304,8 @@ export default function SignupScreen() {
               <Text
                 style={styles.termsLink}
                 onPress={() => WebBrowser.openBrowserAsync(TERMS_URL)}>
-                terms
+                Terms of Use
               </Text>
-              . There is no tolerance for objectionable content or abusive behaviour, and
-              accounts that post it are removed.
             </Text>
           </TouchableOpacity>
 
@@ -410,7 +409,7 @@ const styles = StyleSheet.create({
   checkbox:  { width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: COLORS.textSecondary, alignItems: 'center', justifyContent: 'center', marginTop: 1 },
   checkboxOn:{ backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   checkmark: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  termsText: { flex: 1, fontSize: 12, lineHeight: 17, color: COLORS.textSecondary },
+  termsText: { flex: 1, fontSize: 13, lineHeight: 18, color: COLORS.textSecondary },
   termsLink: { color: COLORS.primary, fontWeight: '600', textDecorationLine: 'underline' },
   button: {
     backgroundColor: COLORS.primary,
