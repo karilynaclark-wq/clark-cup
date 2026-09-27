@@ -84,6 +84,7 @@ export default function PhotoContestScreen() {
       supabase
         .from('photo_entries')
         .select('id, profile_id, week_start, photo_url, caption, profiles(username)')
+        .eq('hidden', false)
         .order('week_start', { ascending: false })
         .order('created_at', { ascending: true }),
       supabase
@@ -156,6 +157,49 @@ export default function PhotoContestScreen() {
     } finally {
       setUploading(false);
     }
+  };
+
+  // ── Your own photo ──────────────────────────────────────────────
+  const removeMine = (entry: Entry) => {
+    Alert.alert('Remove your photo?', 'It will be taken out of this week\u2019s contest.', [
+      { text: 'Keep', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          const { error } = await supabase.from('photo_entries').delete().eq('id', entry.id);
+          if (error) { Alert.alert('Error', 'Could not remove that photo.'); return; }
+          await fetchData();
+        },
+      },
+    ]);
+  };
+
+  // ── Reporting ───────────────────────────────────────────────────
+  // Reporting hides the photo for everyone immediately (a database trigger
+  // sets hidden), so nothing objectionable stays up waiting on review.
+  const report = (entry: Entry) => {
+    Alert.alert(
+      'Report this photo?',
+      'It will be hidden from everyone straight away and sent to the app owner for review.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Report',
+          style: 'destructive',
+          onPress: async () => {
+            const { error } = await supabase.from('photo_reports').insert({
+              entry_id: entry.id,
+              reporter_id: profile!.id,
+              family_id: profile!.family_id,
+            });
+            if (error) { Alert.alert('Error', 'Could not report that photo.'); return; }
+            await fetchData();
+            Alert.alert('Reported', 'Thanks — it has been hidden and flagged for review.');
+          },
+        },
+      ],
+    );
   };
 
   // ── Hearting ────────────────────────────────────────────────────
@@ -262,7 +306,18 @@ export default function PhotoContestScreen() {
                   const won     = !open && most > 0 && count === most;
                   return (
                     <View key={entry.id} style={styles.card}>
-                      <Image source={{ uri: entry.photo_url }} style={styles.photo} resizeMode="cover" />
+                      <View>
+                        <Image source={{ uri: entry.photo_url }} style={styles.photo} resizeMode="cover" />
+                        <TouchableOpacity
+                          style={styles.photoAction}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          onPress={() => (entry.profile_id === profile?.id ? removeMine(entry) : report(entry))}
+                          accessibilityLabel={entry.profile_id === profile?.id ? 'Remove your photo' : 'Report this photo'}>
+                          <Text style={styles.photoActionText}>
+                            {entry.profile_id === profile?.id ? '✕' : '⚑'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
                       <View style={styles.cardFooter}>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.cardName} numberOfLines={1}>
@@ -346,6 +401,12 @@ const styles = StyleSheet.create({
   card: {
     width: CARD_W, borderRadius: 18, overflow: 'hidden', backgroundColor: C.card,
   },
+  photoAction: {
+    position: 'absolute', top: 8, right: 8,
+    width: 30, height: 30, borderRadius: 15,
+    backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center',
+  },
+  photoActionText: { color: '#fff', fontSize: 14, fontWeight: '600' },
   photo:      { width: '100%', aspectRatio: 1, backgroundColor: '#e8e2d8' },
   cardFooter: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 8 },
   cardName:   { fontSize: 15, fontWeight: '700', color: C.ink },

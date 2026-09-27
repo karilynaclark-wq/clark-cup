@@ -54,6 +54,7 @@ export default function ProfileScreen() {
   const [saving,          setSaving]          = useState(false);
   const [deleting,        setDeleting]        = useState(false);
   const [family,          setFamily]          = useState<{ name: string; join_code: string } | null>(null);
+  const [members,         setMembers]         = useState<{ id: string; username: string }[]>([]);
   const [newPassword,     setNewPassword]     = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changingPw,      setChangingPw]      = useState(false);
@@ -82,6 +83,12 @@ export default function ProfileScreen() {
       .eq('id', profile.family_id)
       .maybeSingle()
       .then(({ data }) => setFamily(data as any));
+    supabase
+      .from('profiles')
+      .select('id, username')
+      .eq('family_id', profile.family_id)
+      .order('username')
+      .then(({ data }) => setMembers((data as any) ?? []));
   }, [profile?.family_id]);
 
   useEffect(() => {
@@ -165,6 +172,27 @@ export default function ProfileScreen() {
     if (error) { Alert.alert('Error', error.message); return; }
     setNewPassword(''); setConfirmPassword('');
     Alert.alert('Password updated ✓', 'Your password has been changed.');
+  };
+
+  // Guideline 1.2 asks for a way to remove an abusive user. Anyone in the
+  // family can remove anyone else; the server checks you share a family.
+  const removeMember = (id: string, name: string) => {
+    Alert.alert(
+      `Remove ${name}?`,
+      `They lose access to ${family?.name ?? 'your family'} and their contest photos are deleted. Their points stay on the board.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            const { data, error } = await supabase.rpc('remove_from_family', { target_profile: id });
+            if (error || data === false) { Alert.alert('Error', 'Could not remove that member.'); return; }
+            setMembers((m) => m.filter((x) => x.id !== id));
+          },
+        },
+      ],
+    );
   };
 
   const handleSignOut = () => {
@@ -396,6 +424,20 @@ export default function ProfileScreen() {
               <Text style={styles.familyName}>{family.name}</Text>
               <Text style={styles.familyCodeLabel}>Invite code</Text>
               <Text style={styles.familyCode}>{family.join_code}</Text>
+              {members.filter((m) => m.id !== profile?.id).length > 0 && (
+                <View style={styles.membersBlock}>
+                  <Text style={styles.membersLabel}>Members</Text>
+                  {members.filter((m) => m.id !== profile?.id).map((m) => (
+                    <View key={m.id} style={styles.memberRow}>
+                      <Text style={styles.memberName}>{m.username}</Text>
+                      <TouchableOpacity onPress={() => removeMember(m.id, m.username)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                        <Text style={styles.memberRemove}>Remove</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
+
               <Text style={styles.familyHint}>
                 Share this code so family members can join. They enter it when they sign up.
               </Text>
@@ -516,6 +558,11 @@ const styles = StyleSheet.create({
   familyName:    { fontSize: 20, fontWeight: '700', color: C.ink, marginBottom: 16 },
   familyCodeLabel:{ fontSize: 11, fontWeight: '600', color: C.inkMid, letterSpacing: 0.6, marginBottom: 4 },
   familyCode:    { fontSize: 30, fontWeight: '800', color: C.green, letterSpacing: 6, marginBottom: 10 },
+  membersBlock: { marginTop: 18, borderTopWidth: 1, borderTopColor: C.border, paddingTop: 12 },
+  membersLabel: { fontSize: 11, fontWeight: '600', letterSpacing: 1, textTransform: 'uppercase', color: C.inkDim, marginBottom: 6 },
+  memberRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 },
+  memberName:   { fontSize: 15, color: C.ink },
+  memberRemove: { fontSize: 13, fontWeight: '600', color: '#b3261e' },
   familyHint:    { fontSize: 12, color: C.inkMid, lineHeight: 18 },
   notifyCard:    { backgroundColor: C.card, borderRadius: 18, marginHorizontal: 20, borderWidth: 1, borderColor: C.border, overflow: 'hidden' },
   notifyRow:     { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 16 },

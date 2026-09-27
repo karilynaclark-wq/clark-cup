@@ -13,9 +13,14 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { COLORS } from '@/constants/Colors';
+
+// Apple's standard EULA, which applies to every App Store app unless the
+// developer supplies their own.
+const TERMS_URL = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
 
 export default function SignupScreen() {
   const router = useRouter();
@@ -29,6 +34,9 @@ export default function SignupScreen() {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [loading, setLoading] = useState(false);
+  // Guideline 1.2: people must agree to terms with no tolerance for
+  // objectionable content before they can post any.
+  const [agreed, setAgreed] = useState(false);
 
   const handleSignup = async () => {
     if (!firstName.trim() || !lastName.trim() || !email || !password || !confirm) {
@@ -49,6 +57,10 @@ export default function SignupScreen() {
     }
     if (password.length < 6) {
       Alert.alert('Weak password', 'Password must be at least 6 characters.');
+      return;
+    }
+    if (!agreed) {
+      Alert.alert('One more thing', 'Please agree to the terms before creating your account.');
       return;
     }
 
@@ -279,6 +291,25 @@ export default function SignupScreen() {
             secureTextEntry
           />
 
+          <TouchableOpacity
+            style={styles.termsRow}
+            onPress={() => setAgreed((a) => !a)}
+            activeOpacity={0.7}>
+            <View style={[styles.checkbox, agreed && styles.checkboxOn]}>
+              {agreed && <Text style={styles.checkmark}>✓</Text>}
+            </View>
+            <Text style={styles.termsText}>
+              I agree to the{' '}
+              <Text
+                style={styles.termsLink}
+                onPress={() => WebBrowser.openBrowserAsync(TERMS_URL)}>
+                terms
+              </Text>
+              . There is no tolerance for objectionable content or abusive behaviour, and
+              accounts that post it are removed.
+            </Text>
+          </TouchableOpacity>
+
           <TouchableOpacity style={styles.button} onPress={handleSignup} disabled={loading}>
             {loading ? (
               <ActivityIndicator color={COLORS.white} />
@@ -375,6 +406,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
+  termsRow:  { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginTop: 4, marginBottom: 16 },
+  checkbox:  { width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: COLORS.textSecondary, alignItems: 'center', justifyContent: 'center', marginTop: 1 },
+  checkboxOn:{ backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  checkmark: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  termsText: { flex: 1, fontSize: 12, lineHeight: 17, color: COLORS.textSecondary },
+  termsLink: { color: COLORS.primary, fontWeight: '600', textDecorationLine: 'underline' },
   button: {
     backgroundColor: COLORS.primary,
     borderRadius: 12,
