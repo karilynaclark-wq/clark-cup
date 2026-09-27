@@ -45,7 +45,10 @@ export default function ProfileScreen() {
   const [firstName,       setFirstName]       = useState('');
   const [lastName,        setLastName]        = useState('');
   const [nickname,        setNickname]        = useState('');
-  const [address,         setAddress]         = useState('');
+  const [street,          setStreet]          = useState('');
+  const [city,            setCity]            = useState('');
+  const [stateRegion,     setStateRegion]     = useState('');
+  const [zip,             setZip]             = useState('');
   const [phone,           setPhone]           = useState('');
   const [avatarUri,       setAvatarUri]       = useState<string | null>(null);
   const [saving,          setSaving]          = useState(false);
@@ -86,7 +89,10 @@ export default function ProfileScreen() {
       setFirstName((profile as any).first_name ?? profile.username ?? '');
       setLastName((profile as any).last_name ?? '');
       setNickname((profile as any).nickname ?? '');
-      setAddress(profile.address ?? '');
+      setStreet((profile as any).street ?? profile.address ?? '');
+      setCity((profile as any).city ?? '');
+      setStateRegion((profile as any).state ?? '');
+      setZip((profile as any).zip ?? '');
       setPhone(profile.phone ?? '');
       setAvatarUri(profile.avatar_url ?? null);
     }
@@ -129,7 +135,16 @@ export default function ProfileScreen() {
       first_name: firstName.trim(),
       last_name: lastName.trim() || null,
       nickname: nickname.trim() || null,
-      address: address.trim() || null,
+      street: street.trim() || null,
+      city: city.trim() || null,
+      state: stateRegion.trim() || null,
+      zip: zip.trim() || null,
+      // Kept in sync so anything wanting a whole address still has one.
+      address: [
+        street.trim(),
+        [city.trim(), stateRegion.trim()].filter(Boolean).join(', '),
+        zip.trim(),
+      ].filter(Boolean).join(' ').trim() || null,
       phone: phone.trim() || null,
       avatar_url: avatarUrl,
       updated_at: new Date().toISOString(),
@@ -273,14 +288,46 @@ export default function ProfileScreen() {
                   autoCapitalize="words"
                 />
               </Field>
-              <Field label="Address">
+              <Field label="Street">
                 <TextInput
                   style={styles.fieldInput}
-                  value={address}
-                  onChangeText={setAddress}
-                  placeholder="123 Main St, City, State"
+                  value={street}
+                  onChangeText={setStreet}
+                  placeholder="123 Main St"
                   placeholderTextColor={C.inkDim}
-                  autoCorrect={false}
+                  autoCapitalize="words"
+                />
+              </Field>
+              <Field label="City">
+                <TextInput
+                  style={styles.fieldInput}
+                  value={city}
+                  onChangeText={setCity}
+                  placeholder="San Diego"
+                  placeholderTextColor={C.inkDim}
+                  autoCapitalize="words"
+                />
+              </Field>
+              <Field label="State">
+                <TextInput
+                  style={styles.fieldInput}
+                  value={stateRegion}
+                  onChangeText={setStateRegion}
+                  placeholder="CA"
+                  placeholderTextColor={C.inkDim}
+                  autoCapitalize="characters"
+                  maxLength={20}
+                />
+              </Field>
+              <Field label="ZIP Code">
+                <TextInput
+                  style={styles.fieldInput}
+                  value={zip}
+                  onChangeText={setZip}
+                  placeholder="92101"
+                  placeholderTextColor={C.inkDim}
+                  keyboardType="number-pad"
+                  maxLength={10}
                 />
               </Field>
               <Field label="Phone">

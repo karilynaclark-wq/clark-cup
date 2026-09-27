@@ -24,7 +24,11 @@ export type Profile = {
   nickname: string | null;
   email: string | null;
   avatar_url: string | null;
-  address: string | null;
+  address: string | null;   // composed single line, kept in sync
+  street: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
   phone: string | null;
   total_points: number;
   timezone: string | null;
