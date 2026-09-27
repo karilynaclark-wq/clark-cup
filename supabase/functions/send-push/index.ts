@@ -194,7 +194,7 @@ Deno.serve(async (req) => {
     // in Chicago whichever side of daylight saving we are on. This check
     // discards the one that isn't.
     if (now.weekday !== 'Sun' || now.hour !== 9 || now.minute >= 45) {
-      return Response.json({ skipped: `not 10:30 Sunday in Chicago (${now.weekday} ${now.hour}:${now.minute})` });
+      return Response.json({ skipped: `not 9:30 Sunday in Chicago (${now.weekday} ${now.hour}:${now.minute})` });
     }
     const result = await pushEach(recipients, (r) => ({
       title: `Happy Sunday, ${r.username}!`,
