@@ -51,6 +51,9 @@ export default function TabLayout() {
           }}
         />
       ))}
+      {/* Reached from the Photo Contest card on Home. Inside the tab group
+          so the tab bar stays visible, but href null keeps it off the bar. */}
+      <Tabs.Screen name="photo-contest" options={{ href: null }} />
     </Tabs>
   );
 }
