@@ -36,6 +36,7 @@ const C = {
 };
 
 const PRIVACY_URL = 'https://www.notion.so/Clark-Cup-Privacy-Policy-3582a5e6a8498022a134f1aaef58b301';
+const TERMS_URL   = 'https://app.notion.com/p/Family-Cup-Terms-of-Use-3e82a5e6a84980a687d1dd602a4104e1';
 const SUPPORT_URL = 'https://www.notion.so/Family-Cup-Support-3582a5e6a849801cb7c0ccd5a4780b6e';
 
 export default function ProfileScreen() {
@@ -484,6 +485,10 @@ export default function ProfileScreen() {
               <Text style={styles.legalLink}>Privacy Policy</Text>
             </TouchableOpacity>
             <Text style={styles.legalDot}>·</Text>
+            <Text style={styles.legalDot}>·</Text>
+            <TouchableOpacity onPress={() => WebBrowser.openBrowserAsync(TERMS_URL)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={styles.legalLink}>Terms</Text>
+            </TouchableOpacity>
             <TouchableOpacity onPress={() => WebBrowser.openBrowserAsync(SUPPORT_URL)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Text style={styles.legalLink}>Support</Text>
             </TouchableOpacity>

@@ -21,7 +21,7 @@ import { COLORS } from '@/constants/Colors';
 // Must be terms that state there is no tolerance for objectionable
 // content -- that clause is what App Store guideline 1.2 requires, and the
 // checkbox only needs to link to it.
-const TERMS_URL = 'https://www.notion.so/Family-Cup-Terms-of-Use';
+const TERMS_URL = 'https://app.notion.com/p/Family-Cup-Terms-of-Use-3e82a5e6a84980a687d1dd602a4104e1';
 
 export default function SignupScreen() {
   const router = useRouter();
