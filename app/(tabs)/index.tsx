@@ -351,7 +351,7 @@ export default function HomeScreen() {
                 <View style={styles.rPtsBadge}><Text style={styles.rPtsText}>+100 pts</Text></View>
               </View>
               <Text style={styles.rName}>Photo Contest</Text>
-              <Text style={styles.rFreq}>Submit your photo by EOD Sunday!</Text>
+              <Text style={styles.rFreq}>Submit your photo by EOD Monday!</Text>
             </TouchableOpacity>
           </View>
         </View>

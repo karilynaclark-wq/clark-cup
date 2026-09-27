@@ -9,6 +9,7 @@
 //   sunday  — Sundays:     9:30 AM Chicago, the same instant for everyone
 //   photo_submit — Mondays 5pm, in each person's own time zone
 //   photo_vote   — Tuesdays 5pm, in each person's own time zone
+//   photo_award  — Wednesdays: 100 points to the most-hearted photo
 //
 // Everyone with a saved push token gets every notification. Copy is built
 // per recipient, so the Sunday reminder can greet each person by name.
@@ -201,6 +202,58 @@ Deno.serve(async (req) => {
       body:  'The family call is in 30 minutes — talk soon.',
     }));
     return Response.json({ job, ...result });
+  }
+
+  // Settle the photo contest: 100 points to whoever had the most hearts
+  // for the week whose voting closed yesterday. Ties all win. Runs
+  // Wednesdays; photo_awards stops a week ever paying out twice.
+  if (job === 'photo_award') {
+    const week = addDays(now.date, -2); // Wednesday back to Monday
+    const [{ data: entries }, { data: votes }, { data: done }] = await Promise.all([
+      supabase.from('photo_entries').select('id, family_id, profile_id').eq('week_start', week),
+      supabase.from('photo_votes').select('entry_id').eq('week_start', week),
+      supabase.from('photo_awards').select('family_id').eq('week_start', week),
+    ]);
+    if (!entries || entries.length === 0) return Response.json({ skipped: `no entries for ${week}` });
+
+    const settled = new Set((done ?? []).map((d: any) => d.family_id));
+    const hearts  = new Map<string, number>();
+    for (const v of votes ?? []) {
+      hearts.set((v as any).entry_id, (hearts.get((v as any).entry_id) ?? 0) + 1);
+    }
+
+    const byFamily = new Map<string, any[]>();
+    for (const e of entries as any[]) {
+      if (settled.has(e.family_id)) continue;
+      byFamily.set(e.family_id, [...(byFamily.get(e.family_id) ?? []), e]);
+    }
+
+    const rows: any[] = [];
+    const marks: any[] = [];
+    for (const [familyId, familyEntries] of byFamily) {
+      const top = Math.max(...familyEntries.map((e) => hearts.get(e.id) ?? 0));
+      if (top === 0) continue; // nobody voted; nothing to award
+      for (const e of familyEntries.filter((e) => (hearts.get(e.id) ?? 0) === top)) {
+        rows.push({
+          user_id: e.profile_id,
+          family_id: familyId,
+          category: 'weekly_photo',
+          custom_name: 'Photo contest winner',
+          points: 100,
+        });
+      }
+      marks.push({ family_id: familyId, week_start: week });
+    }
+    if (rows.length === 0) return Response.json({ skipped: `nothing to settle for ${week}` });
+
+    // Mark first: awarding twice is worse than not awarding, and the
+    // points job will announce these on its next run either way.
+    const { error: markErr } = await supabase.from('photo_awards').insert(marks);
+    if (markErr) return Response.json({ error: markErr.message }, { status: 500 });
+    const { error: ptsErr } = await supabase.from('point_submissions').insert(rows);
+    if (ptsErr) return Response.json({ error: ptsErr.message }, { status: 500 });
+
+    return Response.json({ job, week, winners: rows.length, families: marks.length });
   }
 
   // Photo contest deadlines, at 5pm wherever each person is. Cron wakes this

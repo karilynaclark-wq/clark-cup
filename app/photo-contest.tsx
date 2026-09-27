@@ -57,6 +57,15 @@ function weekLabel(iso: string): string {
   return `Week of ${new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}`;
 }
 
+// Submissions are due Monday (the day the week is named for) and voting
+// closes at the end of Tuesday, so a week is open for hearts through
+// week_start + 1 day.
+function votingOpen(weekStart: string): boolean {
+  const [y, m, d] = weekStart.split('-').map(Number);
+  const closes = new Date(y, m - 1, d + 1, 23, 59, 59, 999);
+  return new Date() <= closes;
+}
+
 export default function PhotoContestScreen() {
   const router = useRouter();
   const { profile } = useAuth();
@@ -134,6 +143,10 @@ export default function PhotoContestScreen() {
   // One heart per person per week: tapping another photo moves it.
   const toggleVote = async (entry: Entry) => {
     if (!profile) return;
+    if (!votingOpen(entry.week_start)) {
+      Alert.alert('Voting closed', 'Hearts for that week closed at the end of Tuesday.');
+      return;
+    }
     const mine = votes.find((v) => v.voter_id === profile.id && entryWeek(v) === entry.week_start);
 
     if (mine?.entry_id === entry.id) {
@@ -192,11 +205,19 @@ export default function PhotoContestScreen() {
           const weekEntries = entries.filter((e) => e.week_start === week);
           const counts = weekEntries.map((e) => votersFor(e.id).length);
           const most = Math.max(0, ...counts);
+          const open = votingOpen(week);
 
           return (
             <View key={week} style={styles.weekBlock}>
               <View style={styles.weekHeader}>
-                <Text style={styles.weekTitle}>{weekLabel(week)}</Text>
+                <View>
+                  <Text style={styles.weekTitle}>{weekLabel(week)}</Text>
+                  {!open && most > 0 && (
+                    <Text style={styles.weekClosed}>
+                      Voting closed · {counts.filter((c) => c === most).length > 1 ? 'tied winners' : 'winner'} below
+                    </Text>
+                  )}
+                </View>
                 {week === thisWeek && !iEnteredThisWeek && (
                   <TouchableOpacity style={styles.addBtn} onPress={addPhoto} disabled={uploading}>
                     <Text style={styles.addBtnText}>{uploading ? 'Adding…' : '+ Add yours'}</Text>
@@ -230,9 +251,10 @@ export default function PhotoContestScreen() {
                       </View>
                       <TouchableOpacity
                         onPress={() => toggleVote(entry)}
+                        disabled={!open}
                         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                         accessibilityLabel={iVoted ? 'Remove your heart' : 'Heart this photo'}>
-                        <Text style={styles.heart}>{iVoted ? '❤️' : '🤍'}</Text>
+                        <Text style={[styles.heart, !open && { opacity: 0.35 }]}>{iVoted ? '❤️' : '🤍'}</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -260,6 +282,7 @@ const styles = StyleSheet.create({
 
   weekBlock:  { marginBottom: 28 },
   weekHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  weekClosed: { fontSize: 12, color: C.inkMid, marginTop: 2 },
   weekTitle:  { fontSize: 18, fontWeight: '700', color: C.ink, letterSpacing: -0.3 },
   addBtn:     { backgroundColor: C.card, borderWidth: 1, borderColor: C.borderMd, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 7 },
   addBtnText: { fontSize: 13, fontWeight: '600', color: C.ink },
