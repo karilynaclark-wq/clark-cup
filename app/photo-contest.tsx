@@ -44,11 +44,13 @@ type Entry = {
 };
 type Vote = { entry_id: string; voter_id: string; profiles?: { username: string } | null };
 
-// Weeks run Monday to Sunday, so a week is named by the Monday it starts on.
-function mondayOf(d: Date): string {
+// A contest week is named for the Monday its submissions are due, so the
+// live week is the upcoming Monday (or today, if today is Monday). Voting
+// then runs through the Tuesday after.
+function contestWeek(d: Date): string {
   const copy = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const back = (copy.getDay() + 6) % 7; // Sunday counts as the end, not the start
-  copy.setDate(copy.getDate() - back);
+  const ahead = (8 - copy.getDay()) % 7; // Mon = 0 days ahead
+  copy.setDate(copy.getDate() + ahead);
   return `${copy.getFullYear()}-${String(copy.getMonth() + 1).padStart(2, '0')}-${String(copy.getDate()).padStart(2, '0')}`;
 }
 
@@ -75,7 +77,7 @@ export default function PhotoContestScreen() {
   const [refreshing, setRefresh]= useState(false);
   const [uploading, setUploading] = useState(false);
 
-  const thisWeek = mondayOf(new Date());
+  const thisWeek = contestWeek(new Date());
 
   const fetchData = useCallback(async () => {
     const [{ data: e }, { data: v }] = await Promise.all([
