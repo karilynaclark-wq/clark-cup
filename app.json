@@ -2,7 +2,7 @@
   "expo": {
     "name": "Family Cup",
     "slug": "clark-cup",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "clarkcup",
@@ -17,7 +17,7 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.clarkcup.app",
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "Family Cup uses your photo library to attach photos to point submissions and update your profile picture.",
+        "NSPhotoLibraryUsageDescription": "Family Cup uses your photo library so you can enter the weekly photo contest, attach photos to point submissions, and set your profile picture.",
         "NSCameraUsageDescription": "Family Cup uses your camera to take photos for submissions.",
         "NSUserNotificationsUsageDescription": "Family Cup sends weekly reminders to help you earn points.",
         "ITSAppUsesNonExemptEncryption": false
@@ -40,11 +40,10 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Clark Cup uses your photo library to attach photos to submissions and update your profile picture."
+          "photosPermission": "Family Cup uses your photo library so you can enter the weekly photo contest, attach photos to point submissions, and set your profile picture."
         }
       ],
-      "expo-web-browser",
-      "@react-native-community/datetimepicker"
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true
