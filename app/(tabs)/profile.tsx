@@ -355,13 +355,6 @@ export default function ProfileScreen() {
             </View>
           )}
 
-          {/* ── SIGN OUT ─────────────────────────────────── */}
-          <View style={[styles.btnWrap, { paddingTop: 20, paddingBottom: 8 }]}>
-            <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut} activeOpacity={0.8}>
-              <Text style={styles.signOutText}>Sign Out</Text>
-            </TouchableOpacity>
-          </View>
-
           {/* ── NOTIFICATIONS ────────────────────────────── */}
           <Text style={[styles.sectionLabel, { marginTop: 28, paddingHorizontal: 20 }]}>Notifications</Text>
           <View style={styles.notifyCard}>
@@ -378,6 +371,13 @@ export default function ProfileScreen() {
                 />
               </View>
             ))}
+          </View>
+
+          {/* ── SIGN OUT ─────────────────────────────────── */}
+          <View style={[styles.btnWrap, { paddingTop: 20, paddingBottom: 8 }]}>
+            <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut} activeOpacity={0.8}>
+              <Text style={styles.signOutText}>Sign Out</Text>
+            </TouchableOpacity>
           </View>
 
           {/* ── DELETE ACCOUNT ───────────────────────────── */}
