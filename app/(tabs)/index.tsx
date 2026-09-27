@@ -15,6 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { StatusBar } from 'expo-status-bar';
+import { useRouter } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import { supabase, PointSubmission } from '@/lib/supabase';
 
@@ -130,6 +131,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 export default function HomeScreen() {
+  const router = useRouter();
   const { profile, familyName } = useAuth();
   const [recentActivity,   setRecentActivity]   = useState<ActivityItem[]>([]);
   const [refreshing,       setRefreshing]       = useState(false);
@@ -340,14 +342,17 @@ export default function HomeScreen() {
               <Text style={styles.rName}>Sunday Call</Text>
               <Text style={styles.rFreq}>Every Sunday at {familyCallLocal()}</Text>
             </View>
-            <View style={styles.reminderCard}>
+            <TouchableOpacity
+              style={styles.reminderCard}
+              activeOpacity={0.85}
+              onPress={() => router.push('/photo-contest')}>
               <View style={styles.rTop}>
                 <Text style={styles.rEmoji}>📸</Text>
                 <View style={styles.rPtsBadge}><Text style={styles.rPtsText}>+100 pts</Text></View>
               </View>
               <Text style={styles.rName}>Photo Contest</Text>
               <Text style={styles.rFreq}>Submit your photo by EOD Sunday!</Text>
-            </View>
+            </TouchableOpacity>
           </View>
         </View>
 
