@@ -495,8 +495,8 @@ const styles = StyleSheet.create({
   sectionLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   sectionLabel:    { fontSize: 11, fontWeight: '600', letterSpacing: 1, textTransform: 'uppercase', color: C.inkDim, marginBottom: 10 },
 
-  addBtn:     { backgroundColor: C.ink, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 99, minHeight: 44, justifyContent: 'center' },
-  addBtnText: { color: '#fff', fontSize: 11, fontWeight: '600', letterSpacing: 0.3 },
+  addBtn:     { backgroundColor: C.card, borderWidth: 1, borderColor: C.borderMd, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 99, justifyContent: 'center' },
+  addBtnText: { color: C.ink, fontSize: 14, fontWeight: '600', letterSpacing: -0.1 },
 
   // Reminder cards
   remindersRow: { flexDirection: 'row', gap: 10 },
