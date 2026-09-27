@@ -95,7 +95,33 @@ function avatarColor(name: string) {
   return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
 }
 
+const CHICAGO = 'America/Chicago';
+
 const CARD_W = 232;
+
+// The family call is 10am in Chicago. Everyone should see it in their own
+// zone -- 10AM CST at home, 4PM BST in London -- so work out the actual
+// instant of the next Sunday 10am Chicago, then let the device format it.
+function familyCallLocal(): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: CHICAGO, year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short',
+  }).formatToParts(new Date());
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
+  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].indexOf(get('weekday'));
+  const untilSunday = (7 - days) % 7;
+
+  const base = new Date(`${get('year')}-${get('month')}-${get('day')}T15:00:00Z`);
+  base.setUTCDate(base.getUTCDate() + untilSunday);
+  // 15:00Z is 9 or 10 in Chicago depending on daylight saving; nudge onto 10.
+  const chicagoHour = Number(new Intl.DateTimeFormat('en-US', {
+    timeZone: CHICAGO, hour: '2-digit', hour12: false,
+  }).format(base));
+  const instant = new Date(base.getTime() + (10 - chicagoHour) * 3600000);
+
+  return instant
+    .toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })
+    .replace(':00', '');
+}
 
 const CATEGORY_LABELS: Record<string, string> = {
   sunday_call:  'Sunday Call',
@@ -239,17 +265,15 @@ export default function HomeScreen() {
           <View style={styles.headerTop}>
             <View style={styles.logoRow}>
               <View style={styles.logoIcon}><Text style={styles.logoEmoji}>🏆</Text></View>
-              <Text style={styles.logoText} numberOfLines={1}>{familyName ?? 'Family Cup'}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.greetingSmall} numberOfLines={1}>
+                  Welcome back, {profile?.username?.trim().split(/\s+/)[0] || '—'}
+                </Text>
+                <Text style={styles.familyTitle} numberOfLines={1}>{familyName ?? 'Family Cup'}</Text>
+              </View>
             </View>
-            <Text style={styles.headerYear}>2026</Text>
+            <View style={styles.yearPill}><Text style={styles.headerYear}>2026</Text></View>
           </View>
-
-          <Text style={styles.greetingSmall}>Welcome back</Text>
-          {/* First name only: the display name is often a full name, which
-              is too long for a 64pt greeting and reads stiffly. */}
-          <Text style={styles.greetingName}>
-            {profile?.username?.trim().split(/\s+/)[0] || '—'}.
-          </Text>
         </View>
 
         {/* ── UPCOMING ───────────────────────────────────── */}
@@ -314,7 +338,7 @@ export default function HomeScreen() {
                 <View style={styles.rPtsBadge}><Text style={styles.rPtsText}>+50 pts</Text></View>
               </View>
               <Text style={styles.rName}>Sunday Call</Text>
-              <Text style={styles.rFreq}>Every Sunday</Text>
+              <Text style={styles.rFreq}>Every Sunday at {familyCallLocal()}</Text>
             </View>
             <View style={styles.reminderCard}>
               <View style={styles.rTop}>
@@ -322,7 +346,7 @@ export default function HomeScreen() {
                 <View style={styles.rPtsBadge}><Text style={styles.rPtsText}>+100 pts</Text></View>
               </View>
               <Text style={styles.rName}>Photo Contest</Text>
-              <Text style={styles.rFreq}>Every week</Text>
+              <Text style={styles.rFreq}>Submit your photo by EOD Sunday!</Text>
             </View>
           </View>
         </View>
@@ -449,13 +473,15 @@ const styles = StyleSheet.create({
   scroll:    { paddingBottom: 40 },
 
   // Header
-  header:       { paddingHorizontal: 24, paddingTop: 16, paddingBottom: 28, backgroundColor: C.bg },
-  headerTop:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 },
-  logoRow:      { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  logoIcon:     { width: 30, height: 30, backgroundColor: C.ink, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  logoEmoji:    { fontSize: 15 },
+  header:       { paddingHorizontal: 24, paddingTop: 16, paddingBottom: 4, backgroundColor: C.bg },
+  headerTop:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
+  logoRow:      { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  logoIcon:     { width: 44, height: 44, backgroundColor: C.ink, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  logoEmoji:    { fontSize: 22 },
   logoText:     { fontSize: 15, fontWeight: '600', color: C.ink, letterSpacing: -0.2 },
   headerYear:   { fontSize: 13, fontWeight: '500', color: C.inkMid },
+  yearPill:     { backgroundColor: 'rgba(28,26,22,0.06)', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 },
+  familyTitle:  { fontSize: 22, fontWeight: '700', color: C.ink, letterSpacing: -0.4 },
   greetingSmall:{ fontSize: 13, fontWeight: '500', color: C.inkMid, marginBottom: 2 },
   // lineHeight must be >= fontSize or iOS clips the tops of tall letters
   greetingName: { fontSize: 64, fontWeight: '400', lineHeight: 72, letterSpacing: -2, color: C.ink, fontStyle: 'italic', marginBottom: 4 },
