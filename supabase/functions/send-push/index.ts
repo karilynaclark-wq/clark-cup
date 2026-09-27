@@ -29,6 +29,7 @@ const CATEGORY_PHRASE: Record<string, string> = {
 type Recipient = {
   token: string;
   username: string;
+  familyId: string | null;
   timezone: string | null;
   notify: Record<string, boolean> | null;
 };
@@ -112,7 +113,7 @@ Deno.serve(async (req) => {
   // Everyone who has opened the app and granted permission.
   const { data: people, error: peopleErr } = await supabase
     .from('profiles')
-    .select('username, push_token, timezone, notify')
+    .select('username, push_token, timezone, notify, family_id')
     .not('push_token', 'is', null);
   if (peopleErr) return Response.json({ error: peopleErr.message }, { status: 500 });
 
@@ -121,19 +122,22 @@ Deno.serve(async (req) => {
     .map((p) => ({
       token: p.push_token as string,
       username: p.username as string,
+      familyId: (p as any).family_id ?? null,
       timezone: (p as any).timezone ?? null,
       notify: (p as any).notify ?? null,
     }));
 
   // Opt-out, not opt-in: a missing preference means they want it.
   const wants = (key: string) => everyone.filter((r) => r.notify?.[key] !== false);
-  const recipients = wants(job === 'points' ? 'points' : job === 'events' ? 'events' : 'sunday');
+  // Sunday and the photo deadlines say nothing family-specific, so they go
+  // to everyone who wants them. Points and events are scoped per family below.
+  const recipients = wants('sunday');
 
   if (job === 'points') {
     // Everything logged since the last run, so a flurry of entries becomes one buzz.
     const { data: fresh, error } = await supabase
       .from('point_submissions')
-      .select('id, points, category, custom_name, profiles!user_id(username)')
+      .select('id, points, category, custom_name, family_id, profiles!user_id(username)')
       .is('notified_at', null);
     if (error) return Response.json({ error: error.message }, { status: 500 });
     if (!fresh || fresh.length === 0) return Response.json({ skipped: 'nothing new' });
@@ -143,51 +147,77 @@ Deno.serve(async (req) => {
     const line = (s: any) =>
       `${s.profiles?.username ?? 'Someone'} just got ${s.points} points for ${describe(s)}`;
 
-    let body: string;
-    if (fresh.length === 1) {
-      body = `${line(fresh[0])}!`;
-    } else {
-      const shown = fresh.slice(0, 3).map(line).join(' · ');
-      const rest  = fresh.length - 3;
-      body = rest > 0 ? `${shown} · and ${rest} more` : shown;
+    // Each family hears only about itself. The service role bypasses RLS, so
+    // without this everyone would be told every family's news.
+    const byFamily = new Map<string, any[]>();
+    for (const row of fresh as any[]) {
+      if (!row.family_id) continue;
+      byFamily.set(row.family_id, [...(byFamily.get(row.family_id) ?? []), row]);
     }
 
-    const result = await pushEach(recipients, () => ({ title: '🏆 New points', body }));
+    let sent = 0;
+    for (const [familyId, rows] of byFamily) {
+      const audience = wants('points').filter((r) => r.familyId === familyId);
+      if (audience.length === 0) continue;
+
+      let body: string;
+      if (rows.length === 1) {
+        body = `${line(rows[0])}!`;
+      } else {
+        const shown = rows.slice(0, 3).map(line).join(' · ');
+        const rest  = rows.length - 3;
+        body = rest > 0 ? `${shown} · and ${rest} more` : shown;
+      }
+      const r = await pushEach(audience, () => ({ title: '🏆 New points', body }));
+      sent += r.sent;
+    }
 
     // Mark them announced only after the send succeeded, so a failure retries.
     await supabase
       .from('point_submissions')
       .update({ notified_at: new Date().toISOString() })
-      .in('id', fresh.map((s: any) => s.id));
+      .in('id', (fresh as any[]).map((s) => s.id));
 
-    return Response.json({ job, entries: fresh.length, preview: body, ...result });
+    return Response.json({ job, entries: fresh.length, families: byFamily.size, sent });
   }
 
   if (job === 'events') {
     const tomorrow = addDays(now.date, 1);
     const { data: events, error } = await supabase
       .from('upcoming_events')
-      .select('name, icon, profiles!profile_id(username)')
+      .select('name, icon, family_id, profiles!profile_id(username)')
       .eq('event_date', tomorrow);
     if (error) return Response.json({ error: error.message }, { status: 500 });
     if (!events || events.length === 0) return Response.json({ skipped: 'nothing tomorrow' });
 
-    let message: Message;
-    if (events.length === 1) {
-      const e   = events[0] as any;
-      const who = e.profiles?.username;
-      message = who
-        ? { title: `Have fun, ${who}!`, body: `${e.name} is tomorrow for ${who}!` }
-        : { title: 'Have fun, everyone!', body: `${e.name} is tomorrow!` };
-    } else {
-      message = {
-        title: 'Have fun, everyone!',
-        body: `Tomorrow: ${joinNames((events as any[]).map((e) => e.name))}!`,
-      };
+    const byFamily = new Map<string, any[]>();
+    for (const e of events as any[]) {
+      if (!e.family_id) continue;
+      byFamily.set(e.family_id, [...(byFamily.get(e.family_id) ?? []), e]);
     }
 
-    const result = await pushEach(recipients, () => message);
-    return Response.json({ job, events: events.length, preview: message, ...result });
+    let sent = 0;
+    for (const [familyId, list] of byFamily) {
+      const audience = wants('events').filter((r) => r.familyId === familyId);
+      if (audience.length === 0) continue;
+
+      let message: Message;
+      if (list.length === 1) {
+        const who = list[0].profiles?.username;
+        message = who
+          ? { title: `Have fun, ${who}!`, body: `${list[0].name} is tomorrow for ${who}!` }
+          : { title: 'Have fun, everyone!', body: `${list[0].name} is tomorrow!` };
+      } else {
+        message = {
+          title: 'Have fun, everyone!',
+          body: `Tomorrow: ${joinNames(list.map((e) => e.name))}!`,
+        };
+      }
+      const r = await pushEach(audience, () => message);
+      sent += r.sent;
+    }
+
+    return Response.json({ job, events: events.length, families: byFamily.size, sent });
   }
 
   if (job === 'sunday') {
