@@ -108,41 +108,26 @@ export default function SignupScreen() {
         familyId = newFamilyId as string;
       }
 
-      // Check if there's an existing placeholder profile with this username
-      // (for family members who have historical data but haven't signed up yet)
-      const { data: existingProfile } = await supabase
-        .from('profiles')
-        .select('id')
-        // ilike with no wildcards is an exact match that ignores case, so
-        // someone typing 'kyle' still claims the 'Kyle' profile their family
-        // set up for them, along with its point history.
-        .ilike('username', firstName.trim())
-        .eq('family_id', familyId)
-        .is('auth_user_id', null)
-        .maybeSingle();
+      // Claim a profile the family already set up, if there is one.
+      // This has to be an RPC: the profiles select policy is scoped to
+      // your own family, and during signup you have no profile yet, so a
+      // plain select finds nothing and everyone silently starts at zero.
+      const { data: claimed } = await supabase.rpc('claim_profile', {
+        p_family: familyId,
+        p_name: firstName.trim(),
+        p_email: email.trim().toLowerCase(),
+      });
 
-      if (existingProfile) {
-        // Claim the existing profile — link it to this auth account
-        const { error: claimError } = await supabase
+      if (claimed) {
+        // Existing profile linked, with its point history intact.
+        await supabase
           .from('profiles')
-          .update({
-            auth_user_id: data.user.id,
-            email: email.trim().toLowerCase(),
-            first_name: firstName.trim(),
-            last_name: lastName.trim(),
-          })
-          .eq('id', existingProfile.id);
-        if (claimError) {
-          setLoading(false);
-          Alert.alert('Sign up failed', claimError.message);
-          return;
-        }
+          .update({ first_name: firstName.trim(), last_name: lastName.trim() })
+          .eq('id', claimed as string);
       } else {
-        // No existing profile — create a fresh one
+        // Nobody set one up for this name, so start fresh.
         const { error: profileError } = await supabase.from('profiles').insert({
           auth_user_id: data.user.id,
-          // username is the resolved display name; a nickname set later on
-          // Profile takes its place.
           username: firstName.trim(),
           first_name: firstName.trim(),
           last_name: lastName.trim(),
