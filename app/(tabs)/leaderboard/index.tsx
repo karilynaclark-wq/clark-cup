@@ -149,7 +149,16 @@ export default function LeaderboardScreen() {
                         {isMe && <View style={styles.barDot} />}
                       </Animated.View>
                     </View>
-                    <Text style={[styles.barName, isMe && styles.barNameMe]}>{p.username}</Text>
+                    {/* One line so a long nickname cannot wrap and push the
+                        bars out of alignment; it shrinks, then ellipsises. */}
+                    <Text
+                      style={[styles.barName, isMe && styles.barNameMe]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.7}
+                      ellipsizeMode="tail">
+                      {p.username}
+                    </Text>
                   </TouchableOpacity>
                 );
               })}
@@ -184,7 +193,7 @@ export default function LeaderboardScreen() {
                 <View style={[styles.lbDot, { backgroundColor: color }]} />
 
                 {/* Name */}
-                <Text style={styles.lbName}>
+                <Text style={styles.lbName} numberOfLines={1} ellipsizeMode="tail">
                   {p.username}
                   {isMe ? <Text style={styles.youTag}> you</Text> : null}
                 </Text>
@@ -260,7 +269,7 @@ const styles = StyleSheet.create({
   bar:         { width: '100%', borderRadius: 8, position: 'relative', minHeight: 4 },
   barPtsInner: { position: 'absolute', top: 8, alignSelf: 'center', fontSize: 10, fontStyle: 'italic', color: 'rgba(255,255,255,0.85)', letterSpacing: -0.2 },
   barDot:      { position: 'absolute', top: 22, alignSelf: 'center', width: 6, height: 6, backgroundColor: 'rgba(255,255,255,0.7)', borderRadius: 3 },
-  barName:   { fontSize: 11, fontWeight: '600', color: C.inkMid, letterSpacing: 0.2 },
+  barName:   { fontSize: 11, fontWeight: '600', color: C.inkMid, letterSpacing: 0.2, textAlign: 'center', width: '100%', height: 14 },
   barNameMe: { color: C.green, fontWeight: '700' },
 
   // Ranked list
