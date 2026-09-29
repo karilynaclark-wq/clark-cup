@@ -28,6 +28,7 @@ const CATEGORY_PHRASE: Record<string, string> = {
 };
 
 type Recipient = {
+  id: string;
   token: string;
   username: string;
   familyId: string | null;
@@ -59,10 +60,15 @@ function chicagoNow() {
 function localParts(timezone: string | null) {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone || CHICAGO,
+    year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', weekday: 'short', hour12: false,
   }).formatToParts(new Date());
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
-  return { hour: Number(get('hour')), weekday: get('weekday') };
+  return {
+    hour: Number(get('hour')),
+    weekday: get('weekday'),
+    date: `${get('year')}-${get('month')}-${get('day')}`,
+  };
 }
 
 function addDays(isoDate: string, days: number) {
@@ -114,13 +120,14 @@ Deno.serve(async (req) => {
   // Everyone who has opened the app and granted permission.
   const { data: people, error: peopleErr } = await supabase
     .from('profiles')
-    .select('username, push_token, timezone, notify, family_id')
+    .select('id, username, push_token, timezone, notify, family_id')
     .not('push_token', 'is', null);
   if (peopleErr) return Response.json({ error: peopleErr.message }, { status: 500 });
 
   const everyone: Recipient[] = (people ?? [])
     .filter((p) => p.push_token)
     .map((p) => ({
+      id: (p as any).id as string,
       token: p.push_token as string,
       username: p.username as string,
       familyId: (p as any).family_id ?? null,
@@ -145,8 +152,26 @@ Deno.serve(async (req) => {
 
     const describe = (s: any) =>
       s.custom_name?.trim() || CATEGORY_PHRASE[s.category] || 'being awesome';
-    const line = (s: any) =>
-      `${s.profiles?.username ?? 'Someone'} just got ${s.points} points for ${describe(s)}`;
+
+    // Everyone who got the same points for the same thing is named once,
+    // so a family call reads "Kari, Kelly and Kris each got 50 points for
+    // the Sunday call" instead of the same sentence three times over.
+    const group = (list: any[]) => {
+      const byReason = new Map<string, { points: number; what: string; names: string[] }>();
+      for (const s of list) {
+        const what = describe(s);
+        const key = `${s.points}|${what}`;
+        const g = byReason.get(key) ?? { points: s.points, what, names: [] };
+        const who = s.profiles?.username ?? 'Someone';
+        if (!g.names.includes(who)) g.names.push(who);
+        byReason.set(key, g);
+      }
+      return [...byReason.values()].map((g) =>
+        g.names.length === 1
+          ? `${g.names[0]} just got ${g.points} points for ${g.what}`
+          : `${joinNames(g.names)} each got ${g.points} points for ${g.what}`,
+      );
+    };
 
     // Each family hears only about itself. The service role bypasses RLS, so
     // without this everyone would be told every family's news.
@@ -161,14 +186,12 @@ Deno.serve(async (req) => {
       const audience = wants('points').filter((r) => r.familyId === familyId);
       if (audience.length === 0) continue;
 
-      let body: string;
-      if (rows.length === 1) {
-        body = `${line(rows[0])}!`;
-      } else {
-        const shown = rows.slice(0, 3).map(line).join(' · ');
-        const rest  = rows.length - 3;
-        body = rest > 0 ? `${shown} · and ${rest} more` : shown;
-      }
+      const lines = group(rows);
+      const shown = lines.slice(0, 3).join(' · ');
+      const rest  = lines.length - 3;
+      const body  = rest > 0
+        ? `${shown} · and ${rest} more`
+        : lines.length === 1 ? `${shown}!` : shown;
       const r = await pushEach(audience, () => ({ title: '🏆 New points', body }));
       sent += r.sent;
     }
@@ -386,18 +409,41 @@ Deno.serve(async (req) => {
   // the right day.
   if (job === 'photo_submit' || job === 'photo_vote') {
     const wantDay = job === 'photo_submit' ? 'Mon' : 'Tue';
-    const due = wants('photo').filter((r) => {
-      const { hour, weekday } = localParts(r.timezone);
-      return weekday === wantDay && hour === 17;
-    });
-    if (due.length === 0) return Response.json({ skipped: 'nobody at 5pm right now' });
+
+    // Whose 5pm is it right now, and which contest week is that for them?
+    // A week is named for the Monday photos are due, so Monday's reminder
+    // is about today and Tuesday's vote reminder is about yesterday.
+    const atFive = wants('photo')
+      .map((r) => ({ r, local: localParts(r.timezone) }))
+      .filter((x) => x.local.weekday === wantDay && x.local.hour === 17)
+      .map((x) => ({
+        r: x.r,
+        week: job === 'photo_submit' ? x.local.date : addDays(x.local.date, -1),
+      }));
+    if (atFive.length === 0) return Response.json({ skipped: 'nobody at 5pm right now' });
+
+    const weeks = [...new Set(atFive.map((x) => x.week))];
+
+    // Nobody gets nagged about something they have already done.
+    const [{ data: entries }, { data: cast }] = await Promise.all([
+      supabase.from('photo_entries').select('profile_id, week_start').in('week_start', weeks),
+      supabase.from('photo_votes').select('voter_id, week_start').in('week_start', weeks),
+    ]);
+    const done = new Set(
+      job === 'photo_submit'
+        ? (entries ?? []).map((e: any) => `${e.profile_id}|${e.week_start}`)
+        : (cast ?? []).map((v: any) => `${v.voter_id}|${v.week_start}`),
+    );
+
+    const due = atFive.filter((x) => !done.has(`${x.r.id}|${x.week}`)).map((x) => x.r);
+    if (due.length === 0) return Response.json({ skipped: 'everyone at 5pm has already done it' });
 
     const message: Message = job === 'photo_submit'
       ? { title: '📸 Submit your photo!', body: 'Reminder: the deadline to submit your photo is today.' }
       : { title: '🗳️ Vote!',              body: 'Reminder: the deadline to vote on a photo is today.' };
 
     const result = await pushEach(due, () => message);
-    return Response.json({ job, ...result });
+    return Response.json({ job, reminded: due.length, alreadyDone: atFive.length - due.length, ...result });
   }
 
   return Response.json({ error: `unknown job: ${job}` }, { status: 400 });

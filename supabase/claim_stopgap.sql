@@ -3,30 +3,37 @@
 --
 -- claim_profile() fixes this properly, but the build in the App Store
 -- still does a plain select, which the family-scoped policy blocks
--- because the caller has no profile yet. Without this, Mom and Kyle get
--- an empty duplicate like Kelly and Kris did.
+-- because the caller has no profile yet.
 --
--- Deliberately narrow: it only applies while you have no profile at all,
--- which is exactly the signup moment, and only exposes profiles nobody
--- has claimed. It stops applying the instant your profile exists.
+-- The check for "does this person already have a profile" must NOT be a
+-- subquery on profiles: a policy on profiles that reads profiles recurses,
+-- and Postgres fails every read with 42P17. It goes in a SECURITY DEFINER
+-- function instead, which runs outside RLS.
 --
--- REMOVE THIS once everyone has signed in on a build that calls
--- claim_profile():
+-- REMOVE once everyone is on a build that calls claim_profile():
 --   DROP POLICY "Signing up can find an unclaimed profile" ON profiles;
+--   DROP FUNCTION has_profile();
 -- ══════════════════════════════════════════════════════════════════
 
+-- Clear the recursive version if it is still there.
 DROP POLICY IF EXISTS "Signing up can find an unclaimed profile" ON profiles;
+
+CREATE OR REPLACE FUNCTION has_profile()
+RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT EXISTS (SELECT 1 FROM profiles WHERE auth_user_id = auth.uid());
+$$;
+
+GRANT EXECUTE ON FUNCTION has_profile() TO authenticated;
 
 CREATE POLICY "Signing up can find an unclaimed profile"
   ON profiles FOR SELECT
   USING (
     auth_user_id IS NULL
     AND auth.uid() IS NOT NULL
-    AND NOT EXISTS (
-      SELECT 1 FROM profiles mine WHERE mine.auth_user_id = auth.uid()
-    )
+    AND NOT has_profile()
   );
 
--- Check: the policy is in place
-SELECT policyname FROM pg_policies
-WHERE tablename = 'profiles' AND policyname = 'Signing up can find an unclaimed profile';
+-- Check: existing members can still read their family
+SELECT username, total_points FROM profiles
+WHERE family_id = (SELECT id FROM families WHERE name = 'The Clarks')
+ORDER BY total_points DESC;

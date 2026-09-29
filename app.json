@@ -54,6 +54,14 @@
         "projectId": "38ca123f-ae30-4d6d-b2be-cc7ef30fc404"
       }
     },
-    "owner": "karilynaclark"
+    "owner": "karilynaclark",
+    "updates": {
+      "url": "https://u.expo.dev/38ca123f-ae30-4d6d-b2be-cc7ef30fc404",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
+    "runtimeVersion": {
+      "policy": "sdkVersion"
+    }
   }
 }
