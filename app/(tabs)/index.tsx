@@ -411,7 +411,7 @@ export default function HomeScreen() {
               onPress={() => router.push('/photo-contest')}>
               <View style={styles.rTop}>
                 <Text style={styles.rEmoji}>📸</Text>
-                <View style={styles.rPtsBadge}><Text style={styles.rPtsText}>+100 pts</Text></View>
+                <View style={styles.rPtsBadge}><Text style={styles.rPtsText}>+50 pts</Text></View>
               </View>
               <Text style={styles.rName}>Photo Contest</Text>
               <Text style={styles.rFreq}>Submit your photo by EOD Monday!</Text>

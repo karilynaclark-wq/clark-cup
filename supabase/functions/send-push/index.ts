@@ -9,7 +9,7 @@
 //   sunday  — Sundays:     9:30 AM Chicago, the same instant for everyone
 //   photo_submit — Mondays 5pm, in each person's own time zone
 //   photo_vote   — Tuesdays 5pm, in each person's own time zone
-//   photo_award  — Wednesdays: 100 points to the most-hearted photo
+//   photo_award  — Wednesdays: 50 points to the most-hearted photo
 //   requests     — every 10 min: announce new point requests, approve stale ones
 //
 // Everyone with a saved push token gets every notification. Copy is built
@@ -328,7 +328,7 @@ Deno.serve(async (req) => {
     return Response.json({ job, announced, approved, declined });
   }
 
-  // Settle the photo contest: 100 points to whoever had the most hearts
+  // Settle the photo contest: 50 points to whoever had the most hearts
   // for the week whose voting closed yesterday. Ties all win. Runs
   // Wednesdays; photo_awards stops a week ever paying out twice.
   if (job === 'photo_award') {
@@ -366,7 +366,7 @@ Deno.serve(async (req) => {
           family_id: familyId,
           category: 'weekly_photo',
           custom_name: 'Photo contest winner',
-          points: 100,
+          points: 50,
           // Announced by name below, so keep it out of the points digest
           // rather than telling everyone twice.
           notified_at: new Date().toISOString(),
@@ -395,8 +395,8 @@ Deno.serve(async (req) => {
       if (audience.length === 0 || a.names.length === 0) continue;
       const who = joinNames(a.names);
       const body = a.names.length > 1
-        ? `${who} tied with ${a.hearts} ${a.hearts === 1 ? 'heart' : 'hearts'} each — 100 points apiece.`
-        : `${who} won with ${a.hearts} ${a.hearts === 1 ? 'heart' : 'hearts'} — 100 points.`;
+        ? `${who} tied with ${a.hearts} ${a.hearts === 1 ? 'heart' : 'hearts'} each — 50 points apiece.`
+        : `${who} won with ${a.hearts} ${a.hearts === 1 ? 'heart' : 'hearts'} — 50 points.`;
       const r = await pushEach(audience, () => ({ title: '📸 Photo contest winner', body }));
       told += r.sent;
     }

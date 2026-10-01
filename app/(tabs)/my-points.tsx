@@ -93,6 +93,7 @@ const DEFAULT_QUICK_ADDS: QuickAdd[] = [
   { label: 'Sunday Call',  points: 50 },
   { label: 'Game Night',   points: 10 },
   { label: 'Recipe Share', points: 30 },
+  { label: 'Loyalty',      points: 50 },
 ];
 
 // Fixed per slot: the emoji, how the points read, and which flow opens.
@@ -100,6 +101,7 @@ const SLOT_META = [
   { emoji: '📞', suffix: 'each' },
   { emoji: '🎲', suffix: 'each' },
   { emoji: '🍳', suffix: 'each' },
+  { emoji: '🤝', suffix: 'each' },
 ];
 
 export default function PointsScreen() {
@@ -113,6 +115,7 @@ export default function PointsScreen() {
   const [submitModal,    setSubmitModal]    = useState(false);
   const [boardGameModal, setBoardGameModal] = useState(false);
   const [recipeModal,    setRecipeModal]    = useState(false);
+  const [loyaltyModal,   setLoyaltyModal]   = useState(false);
 
   // Sunday Call state
   const [selectedUsers,    setSelectedUsers]    = useState<Set<string>>(new Set());
@@ -145,8 +148,14 @@ export default function PointsScreen() {
         const saved = (data as any)?.quick_adds;
         if (!Array.isArray(saved)) return;
         // Saved before the photo contest moved to its own page: drop that slot.
-        const trimmed = saved.length === 4 ? [saved[0], saved[2], saved[3]] : saved;
-        if (trimmed.length === 3) setQuickAdds(trimmed);
+        // Three shapes have existed: the original four with Photo Contest
+        // in slot two, the three after it moved to its own page, and the
+        // four now. Keep whatever wording the family chose.
+        const wasPhotoShape = saved.length === 4 && /photo/i.test(saved[1]?.label ?? '');
+        const base = wasPhotoShape ? [saved[0], saved[2], saved[3]] : saved;
+        const filled = [...base];
+        while (filled.length < DEFAULT_QUICK_ADDS.length) filled.push(DEFAULT_QUICK_ADDS[filled.length]);
+        setQuickAdds(filled.slice(0, DEFAULT_QUICK_ADDS.length));
       });
   }, [myProfile?.family_id]);
 
@@ -269,6 +278,26 @@ export default function PointsScreen() {
     confirmAdded(rows.map((r) => r.user_id), quickAdds[2].points, quickAdds[2].label);
   };
 
+  // ── Fourth slot ──────────────────────────────────────────────
+  // No dedicated category for this one, so it files as miscellaneous
+  // under whatever the family has named the card.
+  const [selectedLoyaltyUsers, setSelectedLoyaltyUsers] = useState<Set<string>>(new Set());
+  const [submittingLoyalty, setSubmittingLoyalty] = useState(false);
+  const handleLoyaltySubmit = async () => {
+    if (selectedLoyaltyUsers.size === 0) { Alert.alert('Select at least one person'); return; }
+    setSubmittingLoyalty(true);
+    const rows = Array.from(selectedLoyaltyUsers).map((uid) => ({
+      user_id: uid, category: 'miscellaneous', custom_name: quickAdds[3].label,
+      points: quickAdds[3].points, family_id: myProfile?.family_id,
+    }));
+    const { error } = await supabase.from('point_submissions').insert(rows);
+    setSubmittingLoyalty(false);
+    if (error) { Alert.alert('Error', error.message); return; }
+    setLoyaltyModal(false); setSelectedLoyaltyUsers(new Set());
+    await Promise.all([fetchData(), refreshProfile()]);
+    confirmAdded(rows.map((r) => r.user_id), quickAdds[3].points, quickAdds[3].label);
+  };
+
   // ── Custom submit ─────────────────────────────────────────────
   const resetForm = () => { setCustomName(''); setCustomPoints(''); setNotes(''); setPhotoUri(null); };
 
@@ -366,7 +395,7 @@ export default function PointsScreen() {
               key={i}
               style={styles.quickCard}
               activeOpacity={0.75}
-              onPress={() => [setSundayModal, setBoardGameModal, setRecipeModal][i](true)}>
+              onPress={() => [setSundayModal, setBoardGameModal, setRecipeModal, setLoyaltyModal][i](true)}>
               <Text style={styles.quickEmoji}>{SLOT_META[i].emoji}</Text>
               <Text style={styles.quickName}>{q.label}</Text>
               <Text style={styles.quickPts}>+{q.points} {SLOT_META[i].suffix}</Text>
@@ -474,7 +503,7 @@ export default function PointsScreen() {
             </TouchableOpacity>
             <Text style={styles.modalTitle}>📞 {quickAdds[0].label}</Text>
             <TouchableOpacity onPress={handleSundaySubmit} disabled={submittingSunday}>
-              {submittingSunday ? <ActivityIndicator color={C.accent} /> : <Text style={styles.modalDone}>Add +50</Text>}
+              {submittingSunday ? <ActivityIndicator color={C.accent} /> : <Text style={styles.modalDone}>Add +{quickAdds[0].points}</Text>}
             </TouchableOpacity>
           </View>
           <Text style={styles.modalSubtitle}>Who joined the call?</Text>
@@ -538,7 +567,7 @@ export default function PointsScreen() {
             </TouchableOpacity>
             <Text style={styles.modalTitle}>🎲 {quickAdds[1].label}</Text>
             <TouchableOpacity onPress={handleBoardGameSubmit} disabled={submittingBoardGame}>
-              {submittingBoardGame ? <ActivityIndicator color={C.accent} /> : <Text style={styles.modalDone}>Add +10</Text>}
+              {submittingBoardGame ? <ActivityIndicator color={C.accent} /> : <Text style={styles.modalDone}>Add +{quickAdds[1].points}</Text>}
             </TouchableOpacity>
           </View>
           <Text style={styles.modalSubtitle}>Who played?</Text>
@@ -569,7 +598,7 @@ export default function PointsScreen() {
             </TouchableOpacity>
             <Text style={styles.modalTitle}>🍳 {quickAdds[2].label}</Text>
             <TouchableOpacity onPress={handleRecipeSubmit} disabled={submittingRecipe}>
-              {submittingRecipe ? <ActivityIndicator color={C.accent} /> : <Text style={styles.modalDone}>Add +30</Text>}
+              {submittingRecipe ? <ActivityIndicator color={C.accent} /> : <Text style={styles.modalDone}>Add +{quickAdds[2].points}</Text>}
             </TouchableOpacity>
           </View>
           <Text style={styles.modalSubtitle}>Who shared a recipe?</Text>
@@ -579,6 +608,37 @@ export default function PointsScreen() {
               return (
                 <TouchableOpacity key={p.id} style={[styles.personRow, selected && styles.personRowSelected]}
                   onPress={() => { const next = new Set(selectedRecipeUsers); selected ? next.delete(p.id) : next.add(p.id); setSelectedRecipeUsers(next); }}>
+                  <View style={[styles.personDot, { backgroundColor: personColor(p.username) }]} />
+                  <Text style={[styles.personName, selected && styles.personNameSelected]}>{p.username}</Text>
+                  <View style={[styles.checkbox, selected && styles.checkboxSelected]}>
+                    {selected && <Text style={styles.checkmark}>✓</Text>}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </Modal>
+
+      {/* ── Fourth slot modal ────────────────────────────────── */}
+      <Modal visible={loyaltyModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setLoyaltyModal(false)}>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => { setLoyaltyModal(false); setSelectedLoyaltyUsers(new Set()); }} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+              <Text style={styles.modalCancel}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>🤝 {quickAdds[3].label}</Text>
+            <TouchableOpacity onPress={handleLoyaltySubmit} disabled={submittingLoyalty}>
+              {submittingLoyalty ? <ActivityIndicator color={C.accent} /> : <Text style={styles.modalDone}>Add +{quickAdds[3].points}</Text>}
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.modalSubtitle}>Who gets {quickAdds[3].label.toLowerCase()}?</Text>
+          <ScrollView contentContainerStyle={styles.modalScroll} keyboardDismissMode="on-drag">
+            {profiles.map((p) => {
+              const selected = selectedLoyaltyUsers.has(p.id);
+              return (
+                <TouchableOpacity key={p.id} style={[styles.personRow, selected && styles.personRowSelected]}
+                  onPress={() => { const next = new Set(selectedLoyaltyUsers); selected ? next.delete(p.id) : next.add(p.id); setSelectedLoyaltyUsers(next); }}>
                   <View style={[styles.personDot, { backgroundColor: personColor(p.username) }]} />
                   <Text style={[styles.personName, selected && styles.personNameSelected]}>{p.username}</Text>
                   <View style={[styles.checkbox, selected && styles.checkboxSelected]}>
