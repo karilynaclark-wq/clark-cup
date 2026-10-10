@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   Dimensions,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -32,6 +33,9 @@ const C = {
 };
 
 const { width: SCREEN_W } = Dimensions.get('window');
+
+// Long enough for a real sentence, short enough that a card stays a card.
+const CAPTION_MAX = 140;
 const CARD_W = Math.min(260, SCREEN_W * 0.62);
 
 type Entry = {
@@ -76,6 +80,7 @@ export default function PhotoContestScreen() {
   const [loading, setLoading]   = useState(true);
   const [refreshing, setRefresh]= useState(false);
   const [uploading, setUploading] = useState(false);
+  const [viewing, setViewing]     = useState<Entry | null>(null);
 
   const thisWeek = contestWeek(new Date());
 
@@ -114,11 +119,11 @@ export default function PhotoContestScreen() {
     const caption = await new Promise<string | null>((resolve) => {
       Alert.prompt(
         'Add a description?',
-        'Optional — a few words about this photo.',
+        `Optional — a few words about this photo (up to ${CAPTION_MAX} characters).`,
         [
           { text: 'Cancel', style: 'cancel', onPress: () => resolve(null) },
           { text: 'Skip', onPress: () => resolve('') },
-          { text: 'Add', onPress: (text?: string) => resolve((text ?? '').trim()) },
+          { text: 'Add', onPress: (text?: string) => resolve((text ?? '').trim().slice(0, CAPTION_MAX)) },
         ],
         'plain-text',
         '',
@@ -205,28 +210,9 @@ export default function PhotoContestScreen() {
   // Tapping a photo offers the two things you can do with it. Keeping both
   // behind one tap means the flag is always reachable without putting a
   // report button permanently on top of family photos.
-  const openPhoto = (entry: Entry) => {
-    const mine   = entry.profile_id === profile?.id;
-    const iVoted = votes.some((v) => v.entry_id === entry.id && v.voter_id === profile?.id);
-    const open   = votingOpen(entry.week_start);
-    const who    = entry.profiles?.username ?? 'this photo';
-
-    const actions: any[] = [];
-    if (open) {
-      actions.push({
-        text: iVoted ? '💔  Remove your heart' : '❤️  Heart this photo',
-        onPress: () => toggleVote(entry),
-      });
-    }
-    actions.push(
-      mine
-        ? { text: '🗑  Remove your photo', style: 'destructive', onPress: () => removeMine(entry) }
-        : { text: '⚑  Report this photo', style: 'destructive', onPress: () => report(entry) },
-    );
-    actions.push({ text: 'Cancel', style: 'cancel' });
-
-    Alert.alert(mine ? 'Your photo' : `${who}'s photo`, undefined, actions);
-  };
+  // Full screen: the whole photo, the whole caption, and the two things
+  // you can do with it. The card can then stay small and truncated.
+  const openPhoto = (entry: Entry) => setViewing(entry);
 
   // ── Hearting ────────────────────────────────────────────────────
   // One heart per person per week: tapping another photo moves it.
@@ -378,11 +364,68 @@ export default function PhotoContestScreen() {
           );
         })}
       </ScrollView>
+
+      {/* ── Full screen photo ──────────────────────────────── */}
+      <Modal visible={!!viewing} animationType="fade" onRequestClose={() => setViewing(null)}>
+        {viewing && (() => {
+          const mine   = viewing.profile_id === profile?.id;
+          const open   = votingOpen(viewing.week_start);
+          const iVoted = votes.some((v) => v.entry_id === viewing.id && v.voter_id === profile?.id);
+          const count  = votersFor(viewing.id).length;
+          return (
+            <View style={styles.viewer}>
+              <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
+                <View style={styles.viewerBar}>
+                  <TouchableOpacity onPress={() => setViewing(null)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+                    <Text style={styles.viewerClose}>✕</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => { const e = viewing; setViewing(null); mine ? removeMine(e) : report(e); }}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                    accessibilityLabel={mine ? 'Remove your photo' : 'Report this photo'}>
+                    <Text style={styles.viewerFlag}>{mine ? '🗑' : '⚑'}</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <Image source={{ uri: viewing.photo_url }} style={styles.viewerPhoto} resizeMode="contain" />
+
+                <View style={styles.viewerFooter}>
+                  <View style={{ flex: 1, paddingRight: 14 }}>
+                    <Text style={styles.viewerName}>{viewing.profiles?.username ?? 'Someone'}</Text>
+                    {!!viewing.caption && <Text style={styles.viewerCaption}>{viewing.caption}</Text>}
+                    <Text style={styles.viewerVotes}>
+                      {count === 0 ? 'No votes yet' : `${count} ${count === 1 ? 'vote' : 'votes'}`}
+                      {!open && ' · voting closed'}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => toggleVote(viewing)}
+                    disabled={!open}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+                    <Text style={[styles.viewerHeart, !open && { opacity: 0.3 }]}>{iVoted ? '❤️' : '🤍'}</Text>
+                  </TouchableOpacity>
+                </View>
+              </SafeAreaView>
+            </View>
+          );
+        })()}
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  viewer:        { flex: 1, backgroundColor: '#000' },
+  viewerBar:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12 },
+  viewerClose:   { color: '#fff', fontSize: 22, fontWeight: '600' },
+  viewerFlag:    { color: '#fff', fontSize: 20 },
+  viewerPhoto:   { flex: 1, width: '100%' },
+  viewerFooter:  { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
+  viewerName:    { color: '#fff', fontSize: 17, fontWeight: '700' },
+  viewerCaption: { color: 'rgba(255,255,255,0.85)', fontSize: 15, lineHeight: 21, marginTop: 4 },
+  viewerVotes:   { color: 'rgba(255,255,255,0.5)', fontSize: 13, marginTop: 6 },
+  viewerHeart:   { fontSize: 30 },
+
   container: { flex: 1, backgroundColor: C.bg },
   navBar: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
