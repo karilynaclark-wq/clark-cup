@@ -188,7 +188,7 @@ export default function HomeScreen() {
         .from('point_submissions')
         .select('*, profiles(username, avatar_url)')
         .order('submitted_at', { ascending: false })
-        .limit(3),
+        .limit(10),
       supabase
         .from('profiles')
         .select('id, username, total_points')
@@ -338,10 +338,7 @@ export default function HomeScreen() {
                 <Text style={styles.familyTitle} numberOfLines={1}>{familyName ?? 'Family Cup'}</Text>
               </View>
             </View>
-            <View style={styles.headerRight}>
-              <View style={styles.yearPill}><Text style={styles.headerYear}>2026</Text></View>
-              <ProfileButton />
-            </View>
+            <ProfileButton />
           </View>
         </View>
 

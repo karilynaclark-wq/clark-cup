@@ -118,10 +118,7 @@ export default function LeaderboardScreen() {
               <View style={styles.logoIcon}><Text style={styles.logoEmoji}>🏆</Text></View>
               <Text style={styles.logoText} numberOfLines={1}>{familyName ?? 'Family Cup'}</Text>
             </View>
-            <View style={styles.headerRight}>
-              <Text style={styles.headerYear}>2026</Text>
-              <ProfileButton />
-            </View>
+            <ProfileButton />
           </View>
           <Text style={styles.pageLabel}>Rankings</Text>
           <Text style={styles.pageTitle}>Leaderboard.</Text>

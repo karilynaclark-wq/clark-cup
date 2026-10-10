@@ -265,7 +265,6 @@ export default function ProfileScreen() {
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
                 <Text style={styles.backLink}>‹ Back</Text>
               </TouchableOpacity>
-              <Text style={styles.headerYear}>2026</Text>
             </View>
             <Text style={styles.pageLabel}>Account</Text>
             <Text style={styles.pageTitle}>Profile.</Text>
