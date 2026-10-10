@@ -17,6 +17,7 @@ import { Calendar } from 'react-native-calendars';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
+import FamilyLogo from '@/components/FamilyLogo';
 import ProfileButton from '@/components/ProfileButton';
 import { supabase, PointSubmission } from '@/lib/supabase';
 
@@ -330,7 +331,7 @@ export default function HomeScreen() {
         <View style={styles.header}>
           <View style={styles.headerTop}>
             <View style={styles.logoRow}>
-              <View style={styles.logoIcon}><Text style={styles.logoEmoji}>🏆</Text></View>
+              <FamilyLogo size={44} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.greetingSmall} numberOfLines={1}>
                   Welcome back, {profile?.username?.trim().split(/\s+/)[0] || '—'}

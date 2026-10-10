@@ -7,6 +7,7 @@ type AuthContextType = {
   user: User | null;
   profile: Profile | null;
   familyName: string | null;
+  familyPhoto: string | null;
   loading: boolean;
   refreshProfile: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -17,6 +18,7 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   profile: null,
   familyName: null,
+  familyPhoto: null,
   loading: true,
   refreshProfile: async () => {},
   signOut: async () => {},
@@ -26,6 +28,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [familyName, setFamilyName] = useState<string | null>(null);
+  const [familyPhoto, setFamilyPhoto] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -42,6 +45,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         setProfile(null);
         setFamilyName(null);
+        setFamilyPhoto(null);
       }
     });
 
@@ -51,7 +55,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const fetchProfile = async (userId: string) => {
     const { data, error } = await supabase
       .from('profiles')
-      .select('*, families(name)')
+      .select('*, families(name, photo_url)')
       .eq('auth_user_id', userId)
       .maybeSingle();
     if (error) console.error('fetchProfile error:', error.message);
@@ -59,6 +63,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfile(data as Profile);
       // Shown in every tab's header in place of the app name.
       setFamilyName((data as any).families?.name ?? null);
+      setFamilyPhoto((data as any).families?.photo_url ?? null);
     }
   };
 
@@ -75,7 +80,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ session, user: session?.user ?? null, profile, familyName, loading, refreshProfile, signOut }}>
+    <AuthContext.Provider value={{ session, user: session?.user ?? null, profile, familyName, familyPhoto, loading, refreshProfile, signOut }}>
       {children}
     </AuthContext.Provider>
   );

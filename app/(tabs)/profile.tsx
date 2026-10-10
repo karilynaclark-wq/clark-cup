@@ -54,7 +54,7 @@ export default function ProfileScreen() {
   const [avatarUri,       setAvatarUri]       = useState<string | null>(null);
   const [saving,          setSaving]          = useState(false);
   const [deleting,        setDeleting]        = useState(false);
-  const [family,          setFamily]          = useState<{ name: string; join_code: string } | null>(null);
+  const [family,          setFamily]          = useState<{ name: string; join_code: string; photo_url?: string | null } | null>(null);
   const [members,         setMembers]         = useState<{ id: string; username: string }[]>([]);
   const [newPassword,     setNewPassword]     = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -80,7 +80,7 @@ export default function ProfileScreen() {
     if (!profile?.family_id) return;
     supabase
       .from('families')
-      .select('name, join_code')
+      .select('name, join_code, photo_url')
       .eq('id', profile.family_id)
       .maybeSingle()
       .then(({ data }) => setFamily(data as any));
@@ -126,6 +126,40 @@ export default function ProfileScreen() {
       if (error) throw error;
       return supabase.storage.from('photos').getPublicUrl(fileName).data.publicUrl;
     } catch { return null; }
+  };
+
+  // Any member can set the family photo; it replaces the trophy tile in
+  // every header.
+  const [savingFamilyPhoto, setSavingFamilyPhoto] = useState(false);
+  const pickFamilyPhoto = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') { Alert.alert('Permission needed', 'Please allow photo access in Settings.'); return; }
+    const picked = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true, aspect: [1, 1], quality: 0.8,
+    });
+    if (picked.canceled) return;
+
+    setSavingFamilyPhoto(true);
+    try {
+      const uri = picked.assets[0].uri;
+      const ext = uri.split('.').pop() ?? 'jpg';
+      const path = `family/${profile!.family_id}.${ext}`;
+      const bytes = await (await fetch(uri)).arrayBuffer();
+      const { error: upErr } = await supabase.storage
+        .from('photos').upload(path, bytes, { contentType: `image/${ext}`, upsert: true });
+      if (upErr) throw upErr;
+      // Cache-bust, or every device keeps showing the previous photo.
+      const url = `${supabase.storage.from('photos').getPublicUrl(path).data.publicUrl}?v=${Date.now()}`;
+      const { error } = await supabase.from('families').update({ photo_url: url }).eq('id', profile!.family_id);
+      if (error) throw error;
+      setFamily((f) => (f ? { ...f, photo_url: url } : f));
+      await refreshProfile();
+    } catch {
+      Alert.alert('Error', 'Could not save that photo.');
+    } finally {
+      setSavingFamilyPhoto(false);
+    }
   };
 
   const handleSave = async () => {
@@ -424,7 +458,25 @@ export default function ProfileScreen() {
           {family && (
             <View style={styles.familyCard}>
               <Text style={styles.familyLabel}>YOUR FAMILY</Text>
-              <Text style={styles.familyName}>{family.name}</Text>
+              <View style={styles.familyTop}>
+                <TouchableOpacity onPress={pickFamilyPhoto} disabled={savingFamilyPhoto} activeOpacity={0.8}>
+                  {savingFamilyPhoto ? (
+                    <View style={styles.familyPhoto}><ActivityIndicator color={C.green} /></View>
+                  ) : family.photo_url ? (
+                    <Image source={{ uri: family.photo_url }} style={styles.familyPhoto} />
+                  ) : (
+                    <View style={[styles.familyPhoto, styles.familyPhotoEmpty]}><Text style={{ fontSize: 22 }}>🏆</Text></View>
+                  )}
+                </TouchableOpacity>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.familyName}>{family.name}</Text>
+                  <TouchableOpacity onPress={pickFamilyPhoto} disabled={savingFamilyPhoto}>
+                    <Text style={styles.familyPhotoHint}>
+                      {family.photo_url ? 'Change family photo' : 'Add a family photo'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
               <Text style={styles.familyCodeLabel}>Invite code</Text>
               <Text style={styles.familyCode}>{family.join_code}</Text>
               {members.filter((m) => m.id !== profile?.id).length > 0 && (
@@ -561,9 +613,13 @@ const styles = StyleSheet.create({
   outlineBtnText:{ color: C.ink, fontSize: 15, fontWeight: '600' },
   signOutBtn:    { borderRadius: 22, paddingVertical: 16, alignItems: 'center', borderWidth: 1.5, borderColor: 'rgba(212,95,46,0.25)' },
   signOutText:   { color: C.accent, fontSize: 14, fontWeight: '600', letterSpacing: 0.1 },
+  familyTop:        { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 16 },
+  familyPhoto:      { width: 56, height: 56, borderRadius: 14, backgroundColor: '#e8e2d8', alignItems: 'center', justifyContent: 'center' },
+  familyPhotoEmpty: { backgroundColor: C.ink },
+  familyPhotoHint:  { fontSize: 13, color: C.accent, fontWeight: '600', marginTop: 2 },
   familyCard:    { backgroundColor: C.card, borderRadius: 18, padding: 20, marginTop: 24, borderWidth: 1, borderColor: C.border },
   familyLabel:   { fontSize: 11, fontWeight: '700', color: C.inkDim, letterSpacing: 1, marginBottom: 6 },
-  familyName:    { fontSize: 20, fontWeight: '700', color: C.ink, marginBottom: 16 },
+  familyName:    { fontSize: 20, fontWeight: '700', color: C.ink },
   familyCodeLabel:{ fontSize: 11, fontWeight: '600', color: C.inkMid, letterSpacing: 0.6, marginBottom: 4 },
   familyCode:    { fontSize: 30, fontWeight: '800', color: C.green, letterSpacing: 6, marginBottom: 10 },
   membersBlock: { marginTop: 18, borderTopWidth: 1, borderTopColor: C.border, paddingTop: 12 },

@@ -13,6 +13,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { supabase, Profile } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
+import FamilyLogo from '@/components/FamilyLogo';
 import ProfileButton from '@/components/ProfileButton';
 
 // ── Design tokens ──────────────────────────────────────────────
@@ -115,7 +116,7 @@ export default function LeaderboardScreen() {
         <View style={styles.header}>
           <View style={styles.headerTop}>
             <View style={styles.logoRow}>
-              <View style={styles.logoIcon}><Text style={styles.logoEmoji}>🏆</Text></View>
+              <FamilyLogo />
               <Text style={styles.logoText} numberOfLines={1}>{familyName ?? 'Family Cup'}</Text>
             </View>
             <ProfileButton />
