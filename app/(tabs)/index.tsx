@@ -17,6 +17,7 @@ import { Calendar } from 'react-native-calendars';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
+import ProfileButton from '@/components/ProfileButton';
 import { supabase, PointSubmission } from '@/lib/supabase';
 
 // ── Design tokens (matches clark-cup-v3.html) ──────────────────
@@ -337,7 +338,10 @@ export default function HomeScreen() {
                 <Text style={styles.familyTitle} numberOfLines={1}>{familyName ?? 'Family Cup'}</Text>
               </View>
             </View>
-            <View style={styles.yearPill}><Text style={styles.headerYear}>2026</Text></View>
+            <View style={styles.headerRight}>
+              <View style={styles.yearPill}><Text style={styles.headerYear}>2026</Text></View>
+              <ProfileButton />
+            </View>
           </View>
         </View>
 
@@ -587,6 +591,7 @@ const styles = StyleSheet.create({
   logoIcon:     { width: 44, height: 44, backgroundColor: C.ink, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   logoEmoji:    { fontSize: 22 },
   logoText:     { fontSize: 15, fontWeight: '600', color: C.ink, letterSpacing: -0.2 },
+  headerRight:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
   headerYear:   { fontSize: 13, fontWeight: '500', color: C.inkMid },
   yearPill:     { backgroundColor: 'rgba(28,26,22,0.06)', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 },
   familyTitle:  { fontSize: 22, fontWeight: '700', color: C.ink, letterSpacing: -0.4 },

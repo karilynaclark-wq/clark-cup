@@ -258,10 +258,13 @@ export default function ProfileScreen() {
           {/* ── HEADER ──────────────────────────────────── */}
           <View style={styles.header}>
             <View style={styles.headerTop}>
-              <View style={styles.logoRow}>
-                <View style={styles.logoIcon}><Text style={styles.logoEmoji}>🏆</Text></View>
-                <Text style={styles.logoText} numberOfLines={1}>{familyName ?? 'Family Cup'}</Text>
-              </View>
+              {/* Reached from the avatar in a page header now rather than
+                  the tab bar, so it needs its own way back. */}
+              <TouchableOpacity
+                onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+                <Text style={styles.backLink}>‹ Back</Text>
+              </TouchableOpacity>
               <Text style={styles.headerYear}>2026</Text>
             </View>
             <Text style={styles.pageLabel}>Account</Text>
@@ -527,6 +530,7 @@ const styles = StyleSheet.create({
   logoIcon:   { width: 30, height: 30, backgroundColor: C.ink, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   logoEmoji:  { fontSize: 15 },
   logoText:   { fontSize: 15, fontWeight: '600', color: C.ink },
+  backLink:     { fontSize: 16, fontWeight: '600', color: C.accent },
   headerYear: { fontSize: 13, fontWeight: '500', color: C.inkMid },
   pageLabel:  { fontSize: 13, fontWeight: '500', color: C.inkMid, marginBottom: 2 },
   pageTitle:  { fontSize: 52, fontWeight: '400', lineHeight: 48, letterSpacing: -1.5, color: C.ink, fontStyle: 'italic' },

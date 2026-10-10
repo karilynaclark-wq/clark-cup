@@ -19,6 +19,7 @@ import { StatusBar } from 'expo-status-bar';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase, PointSubmission, Profile } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
+import ProfileButton from '@/components/ProfileButton';
 
 // ── Design tokens ──────────────────────────────────────────────
 const C = {
@@ -373,7 +374,10 @@ export default function PointsScreen() {
             <View style={styles.logoIcon}><Text style={styles.logoEmoji}>🏆</Text></View>
             <Text style={styles.logoText} numberOfLines={1}>{familyName ?? 'Family Cup'}</Text>
           </View>
-          <Text style={styles.headerYear}>2026</Text>
+          <View style={styles.headerRight}>
+            <Text style={styles.headerYear}>2026</Text>
+            <ProfileButton />
+          </View>
         </View>
         <Text style={styles.pageLabel}>Activity</Text>
         <Text style={styles.pageTitle}>Points.</Text>
@@ -666,6 +670,7 @@ const styles = StyleSheet.create({
   logoIcon:    { width: 30, height: 30, backgroundColor: C.ink, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   logoEmoji:   { fontSize: 15 },
   logoText:    { fontSize: 15, fontWeight: '600', color: C.ink },
+  headerRight:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
   headerYear:  { fontSize: 13, fontWeight: '500', color: C.inkMid },
   pageLabel:   { fontSize: 13, fontWeight: '500', color: C.inkMid, marginBottom: 2 },
   pageTitle:   { fontSize: 52, fontWeight: '400', lineHeight: 48, letterSpacing: -1.5, color: C.ink, fontStyle: 'italic' },

@@ -7,7 +7,6 @@ const TABS = [
   { name: 'index',       label: 'Home',        emoji: '🏠' },
   { name: 'leaderboard', label: 'Leaderboard', emoji: '🏆' },
   { name: 'my-points',   label: 'Points',      emoji: '⭐' },
-  { name: 'profile',     label: 'Profile',     emoji: '👤' },
 ];
 
 function EmojiTabIcon({ emoji, label, focused }: { emoji: string; label: string; focused: boolean }) {
@@ -54,6 +53,10 @@ export default function TabLayout() {
       {/* Reached from the Photo Contest card on Home. Inside the tab group
           so the tab bar stays visible, but href null keeps it off the bar. */}
       <Tabs.Screen name="photo-contest" options={{ href: null }} />
+      {/* Reached from the avatar in each page's header rather than the tab
+          bar, which keeps the bar to the three places you actually move
+          between. Account deletion lives here, so it stays one tap away. */}
+      <Tabs.Screen name="profile" options={{ href: null }} />
     </Tabs>
   );
 }
