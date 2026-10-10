@@ -83,7 +83,10 @@ export default function ProfileScreen() {
       .select('name, join_code, photo_url')
       .eq('id', profile.family_id)
       .maybeSingle()
-      .then(({ data }) => setFamily(data as any));
+      .then(({ data, error }) => {
+        if (error) console.error('family fetch failed:', error.message);
+        setFamily(data as any);
+      });
     supabase
       .from('profiles')
       .select('id, username')
