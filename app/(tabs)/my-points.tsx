@@ -96,10 +96,9 @@ type QuickAdd = { emoji: string; label: string; points: number; category: string
 
 const MAX_QUICK_ADDS = 4;
 
-const DEFAULT_QUICK_ADDS: QuickAdd[] = [
-  { emoji: '📞', label: 'Sunday Call', points: 50, category: 'sunday_call' },
-  { emoji: '🎲', label: 'Game Night',  points: 10, category: 'board_game' },
-];
+// A new family starts with none: what counts for points is theirs to
+// decide, so they build the cards rather than inherit ours.
+const DEFAULT_QUICK_ADDS: QuickAdd[] = [];
 
 // What the first four slots used to mean, back when they were fixed.
 // Families who set theirs up then have {label, points} saved with the
@@ -131,6 +130,7 @@ export default function PointsScreen() {
   const [editModal,     setEditModal]     = useState(false);
   const [draftAdds,     setDraftAdds]     = useState<QuickAdd[]>(DEFAULT_QUICK_ADDS);
   const [savingAdds,    setSavingAdds]    = useState(false);
+  const [addsLoaded,    setAddsLoaded]    = useState(false);
 
   // Custom submit state
   const [customName,   setCustomName]   = useState('');
@@ -149,6 +149,7 @@ export default function PointsScreen() {
       .maybeSingle()
       .then(({ data }) => {
         const saved = (data as any)?.quick_adds;
+        setAddsLoaded(true);
         if (!Array.isArray(saved) || saved.length === 0) return;
         // Saved before the photo contest moved to its own page: drop that slot.
         const wasPhotoShape = saved.length === 4 && /photo/i.test(saved[1]?.label ?? '');
@@ -366,7 +367,11 @@ export default function PointsScreen() {
           </TouchableOpacity>
         </View>
         {quickAdds.length === 0 ? (
-          <Text style={styles.quickEmpty}>No Quick Add cards — tap Edit to make one.</Text>
+          // Blank until the fetch lands, so a family who has cards does
+          // not see "none" flash before they arrive.
+          <Text style={styles.quickEmpty}>
+            {addsLoaded ? 'No Quick Add cards yet — tap Edit to make one.' : ' '}
+          </Text>
         ) : (
           <View style={styles.quickGrid}>
             {quickAdds.map((q, i) => (
@@ -443,8 +448,9 @@ export default function PointsScreen() {
           </View>
           <ScrollView contentContainerStyle={styles.modalScroll} keyboardShouldPersistTaps="handled">
             <Text style={styles.editIntro}>
-              Make these match how your family earns points. Tap the icon to
-              change it — any emoji works. Up to {MAX_QUICK_ADDS} cards.
+              Quick Add cards are the things your family does often, so nobody
+              types them out every time. Tap the icon to change it — any emoji
+              works. Up to {MAX_QUICK_ADDS} cards.
             </Text>
             {draftAdds.map((q, i) => (
               <View key={i} style={styles.editRow}>
