@@ -89,22 +89,29 @@ function buildFlatList(items: ActivityItem[]): FlatRow[] {
   return rows;
 }
 
-type QuickAdd = { label: string; points: number };
+// A Quick Add card. `category` is fixed when the card is created and
+// never edited, so renaming a card does not rewrite the history of the
+// points already filed under it.
+type QuickAdd = { emoji: string; label: string; points: number; category: string };
+
+const MAX_QUICK_ADDS = 4;
 
 const DEFAULT_QUICK_ADDS: QuickAdd[] = [
-  { label: 'Sunday Call',  points: 50 },
-  { label: 'Game Night',   points: 10 },
-  { label: 'Recipe Share', points: 30 },
-  { label: 'Loyalty',      points: 50 },
+  { emoji: '📞', label: 'Sunday Call', points: 50, category: 'sunday_call' },
+  { emoji: '🎲', label: 'Game Night',  points: 10, category: 'board_game' },
 ];
 
-// Fixed per slot: the emoji, how the points read, and which flow opens.
-const SLOT_META = [
-  { emoji: '📞', suffix: 'each' },
-  { emoji: '🎲', suffix: 'each' },
-  { emoji: '🍳', suffix: 'each' },
-  { emoji: '🤝', suffix: 'each' },
+// What the first four slots used to mean, back when they were fixed.
+// Families who set theirs up then have {label, points} saved with the
+// emoji and category implied by position, so fill those back in.
+const LEGACY_SLOTS = [
+  { emoji: '📞', category: 'sunday_call' },
+  { emoji: '🎲', category: 'board_game' },
+  { emoji: '🍳', category: 'recipe' },
+  { emoji: '🤝', category: 'miscellaneous' },
 ];
+
+const blankQuickAdd = (): QuickAdd => ({ emoji: '⭐️', label: '', points: 10, category: 'miscellaneous' });
 
 export default function PointsScreen() {
   const { profile: myProfile, user, refreshProfile, familyName } = useAuth();
@@ -112,20 +119,14 @@ export default function PointsScreen() {
   const [profiles,   setProfiles]   = useState<Profile[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Quick add modals
-  const [sundayModal,    setSundayModal]    = useState(false);
-  const [submitModal,    setSubmitModal]    = useState(false);
-  const [boardGameModal, setBoardGameModal] = useState(false);
-  const [recipeModal,    setRecipeModal]    = useState(false);
-  const [loyaltyModal,   setLoyaltyModal]   = useState(false);
+  const [submitModal, setSubmitModal] = useState(false);
 
-  // Sunday Call state
-  const [selectedUsers,    setSelectedUsers]    = useState<Set<string>>(new Set());
-  const [submittingSunday, setSubmittingSunday] = useState(false);
+  // Whichever Quick Add card is open, and who is ticked in it.
+  const [activeAdd,     setActiveAdd]     = useState<number | null>(null);
+  const [pickedUsers,   setPickedUsers]   = useState<Set<string>>(new Set());
+  const [submittingAdd, setSubmittingAdd] = useState(false);
 
-
-  // The family's four Quick Add cards. Behaviour per slot is fixed; only
-  // the wording and the points are the family's to change.
+  // The family's Quick Add cards: two to start with, up to four.
   const [quickAdds,     setQuickAdds]     = useState<QuickAdd[]>(DEFAULT_QUICK_ADDS);
   const [editModal,     setEditModal]     = useState(false);
   const [draftAdds,     setDraftAdds]     = useState<QuickAdd[]>(DEFAULT_QUICK_ADDS);
@@ -148,24 +149,34 @@ export default function PointsScreen() {
       .maybeSingle()
       .then(({ data }) => {
         const saved = (data as any)?.quick_adds;
-        if (!Array.isArray(saved)) return;
+        if (!Array.isArray(saved) || saved.length === 0) return;
         // Saved before the photo contest moved to its own page: drop that slot.
-        // Three shapes have existed: the original four with Photo Contest
-        // in slot two, the three after it moved to its own page, and the
-        // four now. Keep whatever wording the family chose.
         const wasPhotoShape = saved.length === 4 && /photo/i.test(saved[1]?.label ?? '');
         const base = wasPhotoShape ? [saved[0], saved[2], saved[3]] : saved;
-        const filled = [...base];
-        while (filled.length < DEFAULT_QUICK_ADDS.length) filled.push(DEFAULT_QUICK_ADDS[filled.length]);
-        setQuickAdds(filled.slice(0, DEFAULT_QUICK_ADDS.length));
+        // Cards saved before emoji and category were editable carry neither,
+        // so fall back to what that position used to mean. Nothing is
+        // dropped: a family who set up four keeps four.
+        const restored: QuickAdd[] = base.slice(0, MAX_QUICK_ADDS).map((q: any, i: number) => ({
+          emoji:    q?.emoji || LEGACY_SLOTS[i]?.emoji || '⭐️',
+          label:    q?.label ?? '',
+          points:   Number(q?.points) || 10,
+          category: q?.category || LEGACY_SLOTS[i]?.category || 'miscellaneous',
+        }));
+        setQuickAdds(restored);
       });
   }, [myProfile?.family_id]);
 
   const saveQuickAdds = async () => {
-    const cleaned = draftAdds.map((q, i) => ({
-      label: q.label.trim() || DEFAULT_QUICK_ADDS[i].label,
-      points: Math.max(1, parseInt(String(q.points), 10) || DEFAULT_QUICK_ADDS[i].points),
-    }));
+    // A card with no name is one the family cleared out, so drop it.
+    const cleaned = draftAdds
+      .filter((q) => q.label.trim() !== '')
+      .slice(0, MAX_QUICK_ADDS)
+      .map((q) => ({
+        emoji:    q.emoji.trim() || '⭐️',
+        label:    q.label.trim(),
+        points:   Math.max(1, parseInt(String(q.points), 10) || 10),
+        category: q.category || 'miscellaneous',
+      }));
     setSavingAdds(true);
     const { error } = await supabase
       .from('families')
@@ -236,68 +247,31 @@ export default function PointsScreen() {
     Alert.alert('Points added 🏆', `${who}${each} got ${points} points for ${what}.`);
   };
 
-  // ── Sunday Call ───────────────────────────────────────────────
-  const handleSundaySubmit = async () => {
-    if (selectedUsers.size === 0) { Alert.alert('Select at least one person'); return; }
-    setSubmittingSunday(true);
-    const rows = Array.from(selectedUsers).map((uid) => ({ user_id: uid, category: 'sunday_call', points: quickAdds[0].points, family_id: myProfile?.family_id }));
-    const { error } = await supabase.from('point_submissions').insert(rows);
-    setSubmittingSunday(false);
-    if (error) { Alert.alert('Error', error.message); return; }
-    setSundayModal(false); setSelectedUsers(new Set());
-    await Promise.all([fetchData(), refreshProfile()]);
-    confirmAdded(rows.map((r) => r.user_id), quickAdds[0].points, quickAdds[0].label);
-  };
+  // ── Quick Add ─────────────────────────────────
+  // One flow for every card. Cards the family made themselves have no
+  // category of their own, so they file as miscellaneous under their name.
+  const openCard = activeAdd === null ? null : quickAdds[activeAdd];
+  const openQuickAdd = (i: number) => { setActiveAdd(i); setPickedUsers(new Set()); };
+  const closeQuickAdd = () => { setActiveAdd(null); setPickedUsers(new Set()); };
 
-  // ── Photo Contest ─────────────────────────────────────────────
-  // ── Board Game Night ─────────────────────────────────────────
-  const [selectedBoardGameUsers, setSelectedBoardGameUsers] = useState<Set<string>>(new Set());
-  const [submittingBoardGame, setSubmittingBoardGame] = useState(false);
-  const handleBoardGameSubmit = async () => {
-    if (selectedBoardGameUsers.size === 0) { Alert.alert('Select at least one person'); return; }
-    setSubmittingBoardGame(true);
-    const rows = Array.from(selectedBoardGameUsers).map((uid) => ({ user_id: uid, category: 'board_game', points: quickAdds[1].points, family_id: myProfile?.family_id }));
-    const { error } = await supabase.from('point_submissions').insert(rows);
-    setSubmittingBoardGame(false);
-    if (error) { Alert.alert('Error', error.message); return; }
-    setBoardGameModal(false); setSelectedBoardGameUsers(new Set());
-    await Promise.all([fetchData(), refreshProfile()]);
-    confirmAdded(rows.map((r) => r.user_id), quickAdds[1].points, quickAdds[1].label);
-  };
-
-  // ── Recipe Share ──────────────────────────────────────────────
-  const [selectedRecipeUsers, setSelectedRecipeUsers] = useState<Set<string>>(new Set());
-  const [submittingRecipe, setSubmittingRecipe] = useState(false);
-  const handleRecipeSubmit = async () => {
-    if (selectedRecipeUsers.size === 0) { Alert.alert('Select at least one person'); return; }
-    setSubmittingRecipe(true);
-    const rows = Array.from(selectedRecipeUsers).map((uid) => ({ user_id: uid, category: 'recipe', points: quickAdds[2].points, family_id: myProfile?.family_id }));
-    const { error } = await supabase.from('point_submissions').insert(rows);
-    setSubmittingRecipe(false);
-    if (error) { Alert.alert('Error', error.message); return; }
-    setRecipeModal(false); setSelectedRecipeUsers(new Set());
-    await Promise.all([fetchData(), refreshProfile()]);
-    confirmAdded(rows.map((r) => r.user_id), quickAdds[2].points, quickAdds[2].label);
-  };
-
-  // ── Fourth slot ──────────────────────────────────────────────
-  // No dedicated category for this one, so it files as miscellaneous
-  // under whatever the family has named the card.
-  const [selectedLoyaltyUsers, setSelectedLoyaltyUsers] = useState<Set<string>>(new Set());
-  const [submittingLoyalty, setSubmittingLoyalty] = useState(false);
-  const handleLoyaltySubmit = async () => {
-    if (selectedLoyaltyUsers.size === 0) { Alert.alert('Select at least one person'); return; }
-    setSubmittingLoyalty(true);
-    const rows = Array.from(selectedLoyaltyUsers).map((uid) => ({
-      user_id: uid, category: 'miscellaneous', custom_name: quickAdds[3].label,
-      points: quickAdds[3].points, family_id: myProfile?.family_id,
+  const handleQuickSubmit = async () => {
+    const card = activeAdd === null ? null : quickAdds[activeAdd];
+    if (!card) return;
+    if (pickedUsers.size === 0) { Alert.alert('Select at least one person'); return; }
+    setSubmittingAdd(true);
+    const rows = Array.from(pickedUsers).map((uid) => ({
+      user_id: uid,
+      family_id: myProfile?.family_id,
+      category: card.category,
+      custom_name: card.category === 'miscellaneous' ? card.label : null,
+      points: card.points,
     }));
     const { error } = await supabase.from('point_submissions').insert(rows);
-    setSubmittingLoyalty(false);
+    setSubmittingAdd(false);
     if (error) { Alert.alert('Error', error.message); return; }
-    setLoyaltyModal(false); setSelectedLoyaltyUsers(new Set());
+    closeQuickAdd();
     await Promise.all([fetchData(), refreshProfile()]);
-    confirmAdded(rows.map((r) => r.user_id), quickAdds[3].points, quickAdds[3].label);
+    confirmAdded(rows.map((r) => r.user_id), card.points, card.label);
   };
 
   // ── Custom submit ─────────────────────────────────────────────
@@ -391,19 +365,23 @@ export default function PointsScreen() {
             <Text style={styles.editLink}>Edit</Text>
           </TouchableOpacity>
         </View>
-        <View style={styles.quickGrid}>
-          {quickAdds.map((q, i) => (
-            <TouchableOpacity
-              key={i}
-              style={styles.quickCard}
-              activeOpacity={0.75}
-              onPress={() => [setSundayModal, setBoardGameModal, setRecipeModal, setLoyaltyModal][i](true)}>
-              <Text style={styles.quickEmoji}>{SLOT_META[i].emoji}</Text>
-              <Text style={styles.quickName}>{q.label}</Text>
-              <Text style={styles.quickPts}>+{q.points} {SLOT_META[i].suffix}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        {quickAdds.length === 0 ? (
+          <Text style={styles.quickEmpty}>No Quick Add cards — tap Edit to make one.</Text>
+        ) : (
+          <View style={styles.quickGrid}>
+            {quickAdds.map((q, i) => (
+              <TouchableOpacity
+                key={i}
+                style={styles.quickCard}
+                activeOpacity={0.75}
+                onPress={() => openQuickAdd(i)}>
+                <Text style={styles.quickEmoji} numberOfLines={1}>{q.emoji}</Text>
+                <Text style={styles.quickName} numberOfLines={1}>{q.label}</Text>
+                <Text style={styles.quickPts}>+{q.points} each</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
       </View>
 
       {/* Submit button */}
@@ -465,17 +443,27 @@ export default function PointsScreen() {
           </View>
           <ScrollView contentContainerStyle={styles.modalScroll} keyboardShouldPersistTaps="handled">
             <Text style={styles.editIntro}>
-              Rename these to match how your family earns points. All four stay — clear one and it goes back to its default.
+              Make these match how your family earns points. Tap the icon to
+              change it — any emoji works. Up to {MAX_QUICK_ADDS} cards.
             </Text>
             {draftAdds.map((q, i) => (
               <View key={i} style={styles.editRow}>
-                <Text style={styles.editEmoji}>{SLOT_META[i].emoji}</Text>
+                {/* An ordinary text field: tap it and use the emoji key. */}
+                <TextInput
+                  style={styles.editEmojiInput}
+                  value={q.emoji}
+                  onChangeText={(t) => setDraftAdds((d) => d.map((x, j) => j === i ? { ...x, emoji: t.slice(0, 8) } : x))}
+                  maxLength={8}
+                  placeholder="⭐️"
+                  placeholderTextColor={C.inkDim}
+                  accessibilityLabel={`Icon for ${q.label || 'this card'}`}
+                />
                 <View style={styles.editFields}>
                   <TextInput
                     style={styles.input}
                     value={q.label}
                     onChangeText={(t) => setDraftAdds((d) => d.map((x, j) => j === i ? { ...x, label: t } : x))}
-                    placeholder={DEFAULT_QUICK_ADDS[i].label}
+                    placeholder="What it is called"
                     placeholderTextColor={C.inkDim}
                   />
                   <View style={styles.editPtsRow}>
@@ -484,37 +472,59 @@ export default function PointsScreen() {
                       value={String(q.points)}
                       onChangeText={(t) => setDraftAdds((d) => d.map((x, j) => j === i ? { ...x, points: t.replace(/[^0-9]/g, '') as any } : x))}
                       keyboardType="number-pad"
-                      placeholder={String(DEFAULT_QUICK_ADDS[i].points)}
+                      placeholder="10"
                       placeholderTextColor={C.inkDim}
                     />
-                    <Text style={styles.editPtsSuffix}>points {SLOT_META[i].suffix}</Text>
+                    <Text style={styles.editPtsSuffix}>points each</Text>
                   </View>
                 </View>
+                <TouchableOpacity
+                  onPress={() => setDraftAdds((d) => d.filter((_, j) => j !== i))}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  accessibilityLabel={`Remove ${q.label || 'this card'}`}>
+                  <Text style={styles.editRemove}>✕</Text>
+                </TouchableOpacity>
               </View>
             ))}
+            {draftAdds.length < MAX_QUICK_ADDS && (
+              <TouchableOpacity
+                style={styles.editAddBtn}
+                onPress={() => setDraftAdds((d) => [...d, blankQuickAdd()])}
+                activeOpacity={0.75}>
+                <Text style={styles.editAddText}>+ Add a card</Text>
+              </TouchableOpacity>
+            )}
           </ScrollView>
         </View>
       </Modal>
 
-      {/* ── Sunday Call Modal ─────────────────────────────── */}
-      <Modal visible={sundayModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setSundayModal(false)}>
+      {/* ── Quick Add Modal ───────────────────── */}
+      <Modal
+        visible={activeAdd !== null}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={closeQuickAdd}>
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => { setSundayModal(false); setSelectedUsers(new Set()); }} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+            <TouchableOpacity onPress={closeQuickAdd} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
               <Text style={styles.modalCancel}>Cancel</Text>
             </TouchableOpacity>
-            <Text style={styles.modalTitle}>📞 {quickAdds[0].label}</Text>
-            <TouchableOpacity onPress={handleSundaySubmit} disabled={submittingSunday}>
-              {submittingSunday ? <ActivityIndicator color={C.accent} /> : <Text style={styles.modalDone}>Add +{quickAdds[0].points}</Text>}
+            <Text style={styles.modalTitle} numberOfLines={1}>
+              {openCard ? `${openCard.emoji} ${openCard.label}` : ''}
+            </Text>
+            <TouchableOpacity onPress={handleQuickSubmit} disabled={submittingAdd}>
+              {submittingAdd
+                ? <ActivityIndicator color={C.accent} />
+                : <Text style={styles.modalDone}>Add +{openCard?.points ?? 0}</Text>}
             </TouchableOpacity>
           </View>
-          <Text style={styles.modalSubtitle}>Who joined the call?</Text>
+          <Text style={styles.modalSubtitle}>Who gets {openCard?.label.toLowerCase() ?? 'these points'}?</Text>
           <ScrollView contentContainerStyle={styles.modalScroll} keyboardDismissMode="on-drag">
             {profiles.map((p) => {
-              const selected = selectedUsers.has(p.id);
+              const selected = pickedUsers.has(p.id);
               return (
                 <TouchableOpacity key={p.id} style={[styles.personRow, selected && styles.personRowSelected]}
-                  onPress={() => { const next = new Set(selectedUsers); selected ? next.delete(p.id) : next.add(p.id); setSelectedUsers(next); }}>
+                  onPress={() => { const next = new Set(pickedUsers); selected ? next.delete(p.id) : next.add(p.id); setPickedUsers(next); }}>
                   <View style={[styles.personDot, { backgroundColor: personColor(p.username) }]} />
                   <Text style={[styles.personName, selected && styles.personNameSelected]}>{p.username}</Text>
                   <View style={[styles.checkbox, selected && styles.checkboxSelected]}>
@@ -560,99 +570,6 @@ export default function PointsScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ── Board Game Night Modal ────────────────────────── */}
-      <Modal visible={boardGameModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setBoardGameModal(false)}>
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => { setBoardGameModal(false); setSelectedBoardGameUsers(new Set()); }} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-              <Text style={styles.modalCancel}>Cancel</Text>
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>🎲 {quickAdds[1].label}</Text>
-            <TouchableOpacity onPress={handleBoardGameSubmit} disabled={submittingBoardGame}>
-              {submittingBoardGame ? <ActivityIndicator color={C.accent} /> : <Text style={styles.modalDone}>Add +{quickAdds[1].points}</Text>}
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.modalSubtitle}>Who played?</Text>
-          <ScrollView contentContainerStyle={styles.modalScroll} keyboardDismissMode="on-drag">
-            {profiles.map((p) => {
-              const selected = selectedBoardGameUsers.has(p.id);
-              return (
-                <TouchableOpacity key={p.id} style={[styles.personRow, selected && styles.personRowSelected]}
-                  onPress={() => { const next = new Set(selectedBoardGameUsers); selected ? next.delete(p.id) : next.add(p.id); setSelectedBoardGameUsers(next); }}>
-                  <View style={[styles.personDot, { backgroundColor: personColor(p.username) }]} />
-                  <Text style={[styles.personName, selected && styles.personNameSelected]}>{p.username}</Text>
-                  <View style={[styles.checkbox, selected && styles.checkboxSelected]}>
-                    {selected && <Text style={styles.checkmark}>✓</Text>}
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-      </Modal>
-
-      {/* ── Recipe Share Modal ───────────────────────────────── */}
-      <Modal visible={recipeModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setRecipeModal(false)}>
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => { setRecipeModal(false); setSelectedRecipeUsers(new Set()); }} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-              <Text style={styles.modalCancel}>Cancel</Text>
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>🍳 {quickAdds[2].label}</Text>
-            <TouchableOpacity onPress={handleRecipeSubmit} disabled={submittingRecipe}>
-              {submittingRecipe ? <ActivityIndicator color={C.accent} /> : <Text style={styles.modalDone}>Add +{quickAdds[2].points}</Text>}
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.modalSubtitle}>Who shared a recipe?</Text>
-          <ScrollView contentContainerStyle={styles.modalScroll} keyboardDismissMode="on-drag">
-            {profiles.map((p) => {
-              const selected = selectedRecipeUsers.has(p.id);
-              return (
-                <TouchableOpacity key={p.id} style={[styles.personRow, selected && styles.personRowSelected]}
-                  onPress={() => { const next = new Set(selectedRecipeUsers); selected ? next.delete(p.id) : next.add(p.id); setSelectedRecipeUsers(next); }}>
-                  <View style={[styles.personDot, { backgroundColor: personColor(p.username) }]} />
-                  <Text style={[styles.personName, selected && styles.personNameSelected]}>{p.username}</Text>
-                  <View style={[styles.checkbox, selected && styles.checkboxSelected]}>
-                    {selected && <Text style={styles.checkmark}>✓</Text>}
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-      </Modal>
-
-      {/* ── Fourth slot modal ────────────────────────────────── */}
-      <Modal visible={loyaltyModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setLoyaltyModal(false)}>
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => { setLoyaltyModal(false); setSelectedLoyaltyUsers(new Set()); }} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-              <Text style={styles.modalCancel}>Cancel</Text>
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>🤝 {quickAdds[3].label}</Text>
-            <TouchableOpacity onPress={handleLoyaltySubmit} disabled={submittingLoyalty}>
-              {submittingLoyalty ? <ActivityIndicator color={C.accent} /> : <Text style={styles.modalDone}>Add +{quickAdds[3].points}</Text>}
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.modalSubtitle}>Who gets {quickAdds[3].label.toLowerCase()}?</Text>
-          <ScrollView contentContainerStyle={styles.modalScroll} keyboardDismissMode="on-drag">
-            {profiles.map((p) => {
-              const selected = selectedLoyaltyUsers.has(p.id);
-              return (
-                <TouchableOpacity key={p.id} style={[styles.personRow, selected && styles.personRowSelected]}
-                  onPress={() => { const next = new Set(selectedLoyaltyUsers); selected ? next.delete(p.id) : next.add(p.id); setSelectedLoyaltyUsers(next); }}>
-                  <View style={[styles.personDot, { backgroundColor: personColor(p.username) }]} />
-                  <Text style={[styles.personName, selected && styles.personNameSelected]}>{p.username}</Text>
-                  <View style={[styles.checkbox, selected && styles.checkboxSelected]}>
-                    {selected && <Text style={styles.checkmark}>✓</Text>}
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-      </Modal>
-
     </SafeAreaView>
   );
 }
@@ -683,7 +600,11 @@ const styles = StyleSheet.create({
   editLink:      { fontSize: 14, fontWeight: '600', color: C.accent },
   editIntro:     { fontSize: 13, color: C.inkMid, lineHeight: 19, marginBottom: 20 },
   editRow:       { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 18 },
-  editEmoji:     { fontSize: 26, marginTop: 12 },
+  editEmojiInput:{ width: 54, height: 50, borderRadius: 12, backgroundColor: C.bg, borderWidth: 1, borderColor: 'rgba(28,26,22,0.10)', textAlign: 'center', fontSize: 24 },
+  editRemove:    { fontSize: 17, color: C.inkDim, marginTop: 15, paddingLeft: 2 },
+  editAddBtn:    { borderRadius: 14, borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(28,26,22,0.20)', paddingVertical: 14, alignItems: 'center', marginTop: 4 },
+  editAddText:   { fontSize: 15, fontWeight: '600', color: C.accent },
+  quickEmpty:    { fontSize: 14, color: C.inkMid, paddingVertical: 8 },
   editFields:    { flex: 1, gap: 8 },
   editPtsRow:    { flexDirection: 'row', alignItems: 'center', gap: 10 },
   editPtsInput:  { width: 90 },
