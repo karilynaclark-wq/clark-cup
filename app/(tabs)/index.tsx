@@ -385,7 +385,7 @@ export default function HomeScreen() {
                       {countdown !== '' && <Text style={styles.ecCountdown}>{countdown}</Text>}
                     </View>
                     <Text style={styles.ecName} numberOfLines={2}>{ev.name}</Text>
-                    <Text style={styles.ecFor}>
+                    <Text style={styles.ecFor} numberOfLines={1}>
                       {ev.profiles?.username ? `For ${ev.profiles.username}` : 'Everyone'}
                     </Text>
                   </View>
@@ -432,7 +432,7 @@ export default function HomeScreen() {
                 return (
                   <View key={req.id} style={[styles.pendingRow, i < pending.length - 1 && styles.pendingBorder]}>
                     <View style={{ flex: 1, paddingRight: 10 }}>
-                      <Text style={styles.pendingName}>
+                      <Text style={styles.pendingName} numberOfLines={1}>
                         {req.profiles?.username ?? 'Someone'} · +{req.points}
                       </Text>
                       <Text style={styles.pendingWhat} numberOfLines={2}>{req.custom_name}</Text>
@@ -476,7 +476,7 @@ export default function HomeScreen() {
                 <View key={item.id} style={[styles.ptItem, i < recentActivity.length - 1 && styles.eventBorder]}>
                   <View style={[styles.ptDot, { backgroundColor: avatarColor(name) }]} />
                   <View style={styles.ptInfo}>
-                    <Text style={styles.ptName}>{name}</Text>
+                    <Text style={styles.ptName} numberOfLines={1}>{name}</Text>
                     <Text style={styles.ptReason}>{label}</Text>
                   </View>
                   <View style={styles.ptRight}>

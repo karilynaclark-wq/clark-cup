@@ -355,7 +355,7 @@ export default function PointsScreen() {
       <View style={[styles.actRow, !isLast && styles.actBorder]}>
         <View style={[styles.actDot, { backgroundColor: personColor(name) }]} />
         <View style={styles.actInfo}>
-          <Text style={styles.actName}>{name}</Text>
+          <Text style={styles.actName} numberOfLines={1}>{name}</Text>
           <Text style={styles.actReason}>{label}</Text>
           {item.photo_url
             ? <Image source={{ uri: item.photo_url }} style={styles.actPhoto} resizeMode="cover" />

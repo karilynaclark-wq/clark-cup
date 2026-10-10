@@ -391,7 +391,7 @@ export default function PhotoContestScreen() {
 
                 <View style={styles.viewerFooter}>
                   <View style={{ flex: 1, paddingRight: 14 }}>
-                    <Text style={styles.viewerName}>{viewing.profiles?.username ?? 'Someone'}</Text>
+                    <Text style={styles.viewerName} numberOfLines={1}>{viewing.profiles?.username ?? 'Someone'}</Text>
                     {!!viewing.caption && <Text style={styles.viewerCaption}>{viewing.caption}</Text>}
                     <Text style={styles.viewerVotes}>
                       {count === 0 ? 'No votes yet' : `${count} ${count === 1 ? 'vote' : 'votes'}`}
