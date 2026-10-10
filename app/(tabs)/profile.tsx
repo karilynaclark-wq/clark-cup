@@ -278,7 +278,7 @@ export default function ProfileScreen() {
                 <Image source={{ uri: avatarUri }} style={styles.avatarImg} />
               ) : (
                 <View style={styles.avatarRing}>
-                  <Text style={styles.avatarLetter}>{initials[0]}</Text>
+                  <Text style={styles.avatarLetter}>{initials}</Text>
                 </View>
               )}
               <View style={styles.avatarEdit}><Text style={{ fontSize: 12 }}>✏️</Text></View>
