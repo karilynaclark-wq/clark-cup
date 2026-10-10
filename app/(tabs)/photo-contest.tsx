@@ -334,7 +334,7 @@ export default function PhotoContestScreen() {
                           )}
                           <Text style={[styles.cardMeta, won && styles.cardMetaWin]} numberOfLines={1}>
                             {won
-                              ? 'Winner · +50 pts'
+                              ? 'Winner · +100 pts'
                               : count === 0
                                 ? (open ? 'No votes yet' : 'No votes')
                                 : `${count} ${count === 1 ? 'vote' : 'votes'}`}
