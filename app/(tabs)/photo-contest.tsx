@@ -12,7 +12,7 @@ import {
   Dimensions,
   Modal,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -81,6 +81,11 @@ export default function PhotoContestScreen() {
   const [refreshing, setRefresh]= useState(false);
   const [uploading, setUploading] = useState(false);
   const [viewing, setViewing]     = useState<Entry | null>(null);
+  // A Modal renders in its own native hierarchy with no SafeAreaProvider
+  // above it, so a SafeAreaView inside one measures a zero inset and the
+  // close button lands under the status bar, where iOS eats the taps.
+  // Read the insets here, where the provider is in scope, and pad by hand.
+  const insets = useSafeAreaInsets();
 
   const thisWeek = contestWeek(new Date());
 
@@ -111,7 +116,10 @@ export default function PhotoContestScreen() {
     if (status !== 'granted') { Alert.alert('Permission needed', 'Please allow photo access.'); return; }
     const picked = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true, aspect: [4, 3], quality: 0.7,
+      // No forced crop: a photo keeps its own shape, so a portrait shot
+      // fills the screen in the viewer. The feed card stays square and
+      // centre-crops it, so the grid is unchanged.
+      allowsEditing: false, quality: 0.7,
     });
     if (picked.canceled) return;
 
@@ -373,8 +381,8 @@ export default function PhotoContestScreen() {
           const iVoted = votes.some((v) => v.entry_id === viewing.id && v.voter_id === profile?.id);
           const count  = votersFor(viewing.id).length;
           return (
-            <View style={styles.viewer}>
-              <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
+            <View style={[styles.viewer, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+              <View style={{ flex: 1 }}>
                 <View style={styles.viewerBar}>
                   <TouchableOpacity onPress={() => setViewing(null)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
                     <Text style={styles.viewerClose}>✕</Text>
@@ -405,7 +413,7 @@ export default function PhotoContestScreen() {
                     <Text style={[styles.viewerHeart, !open && { opacity: 0.3 }]}>{iVoted ? '❤️' : '🤍'}</Text>
                   </TouchableOpacity>
                 </View>
-              </SafeAreaView>
+              </View>
             </View>
           );
         })()}
