@@ -141,7 +141,10 @@ Deno.serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
 
-  const { job } = await req.json().catch(() => ({ job: null }));
+  // force skips the clock gate on the photo reminders, for sending one on
+  // purpose rather than waiting for 5pm to come round. Still behind the
+  // cron secret, so only we can ask for it.
+  const { job, force } = await req.json().catch(() => ({ job: null, force: false }));
   const now = chicagoNow();
 
   // Everyone who has opened the app and granted permission.
@@ -448,10 +451,15 @@ Deno.serve(async (req) => {
     // is about today and Tuesday's vote reminder is about yesterday.
     const atFive = wants('photo')
       .map((r) => ({ r, local: localParts(r.timezone) }))
-      .filter((x) => x.local.weekday === wantDay && x.local.hour === 17)
+      .filter((x) => force || (x.local.weekday === wantDay && x.local.hour === 17))
       .map((x) => ({
         r: x.r,
-        week: job === 'photo_submit' ? x.local.date : addDays(x.local.date, -1),
+        // Forced out of hours, the local date may not be the contest day,
+        // so fall back to Chicago's idea of the week rather than naming a
+        // week that does not exist.
+        week: force
+          ? (job === 'photo_submit' ? now.date : addDays(now.date, -1))
+          : (job === 'photo_submit' ? x.local.date : addDays(x.local.date, -1)),
       }));
     if (atFive.length === 0) return Response.json({ skipped: 'nobody at 5pm right now' });
 
