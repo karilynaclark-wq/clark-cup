@@ -102,6 +102,33 @@ async function pushEach(recipients: Recipient[], build: (r: Recipient) => Messag
   return { sent };
 }
 
+// Record what we told a family, in the words we told them, so the
+// Activity Center can show the scheduled reminders alongside everything
+// else. One row per family rather than per person: the feed is shared,
+// so the copy here drops the personal greeting.
+//
+// Idempotent on (family, kind, key). The photo reminders walk round the
+// world an hour at a time, and this keeps that as a single entry.
+async function logActivity(
+  supabase: any,
+  familyIds: (string | null | undefined)[],
+  kind: string,
+  dedupeKey: string,
+  title: string,
+  body: string,
+) {
+  const families = [...new Set(familyIds.filter(Boolean))] as string[];
+  if (families.length === 0) return;
+  const { error } = await supabase
+    .from('activity_events')
+    .upsert(
+      families.map((family_id) => ({ family_id, kind, dedupe_key: dedupeKey, title, body })),
+      { onConflict: 'family_id,kind,dedupe_key', ignoreDuplicates: true },
+    );
+  // Never fail a send over the log: the notification already went out.
+  if (error) console.error('activity log failed:', error.message);
+}
+
 Deno.serve(async (req) => {
   // Only our own cron jobs may trigger this.
   const secret = Deno.env.get('CRON_SECRET');
@@ -238,6 +265,7 @@ Deno.serve(async (req) => {
         };
       }
       const r = await pushEach(audience, () => message);
+      await logActivity(supabase, [familyId], 'event_reminder', tomorrow, message.title, message.body);
       sent += r.sent;
     }
 
@@ -255,6 +283,10 @@ Deno.serve(async (req) => {
       title: `Happy Sunday, ${r.username}!`,
       body:  'The family call is in 30 minutes — talk soon.',
     }));
+    await logActivity(
+      supabase, recipients.map((r) => r.familyId), 'sunday', now.date,
+      'Happy Sunday!', 'The family call is in 30 minutes — talk soon.',
+    );
     return Response.json({ job, ...result });
   }
 
@@ -398,6 +430,7 @@ Deno.serve(async (req) => {
         ? `${who} tied with ${a.hearts} ${a.hearts === 1 ? 'heart' : 'hearts'} each — 100 points apiece.`
         : `${who} won with ${a.hearts} ${a.hearts === 1 ? 'heart' : 'hearts'} — 100 points.`;
       const r = await pushEach(audience, () => ({ title: '📸 Photo contest winner', body }));
+      await logActivity(supabase, [a.familyId], 'photo_award', week, '📸 Photo contest winner', body);
       told += r.sent;
     }
 
@@ -435,7 +468,8 @@ Deno.serve(async (req) => {
         : (cast ?? []).map((v: any) => `${v.voter_id}|${v.week_start}`),
     );
 
-    const due = atFive.filter((x) => !done.has(`${x.r.id}|${x.week}`)).map((x) => x.r);
+    const stillToGo = atFive.filter((x) => !done.has(`${x.r.id}|${x.week}`));
+    const due = stillToGo.map((x) => x.r);
     if (due.length === 0) return Response.json({ skipped: 'everyone at 5pm has already done it' });
 
     const message: Message = job === 'photo_submit'
@@ -443,6 +477,17 @@ Deno.serve(async (req) => {
       : { title: '🗳️ Vote!',              body: 'Reminder: the deadline to vote on a photo is today.' };
 
     const result = await pushEach(due, () => message);
+
+    // Keyed on the contest week, not the day: this job runs every hour and
+    // reaches each time zone as its own 5pm arrives, so a single reminder
+    // would otherwise land in the feed once per zone.
+    const weekOf = new Map<string, string>();
+    for (const x of stillToGo) {
+      if (x.r.familyId && !weekOf.has(x.r.familyId)) weekOf.set(x.r.familyId, x.week);
+    }
+    for (const [familyId, week] of weekOf) {
+      await logActivity(supabase, [familyId], job, week, message.title, message.body);
+    }
     return Response.json({ job, reminded: due.length, alreadyDone: atFive.length - due.length, ...result });
   }
 

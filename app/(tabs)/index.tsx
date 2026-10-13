@@ -194,6 +194,7 @@ export default function HomeScreen() {
       { data: reqVotes },
       { data: photoEntries },
       { data: allRequests },
+      { data: notified },
     ] = await Promise.all([
       supabase
         .from('point_submissions')
@@ -230,6 +231,14 @@ export default function HomeScreen() {
       supabase
         .from('point_requests')
         .select('id, created_at, resolved_at, status, custom_name, points, profiles!requester_id(username)')
+        .order('created_at', { ascending: false })
+        .limit(20),
+      // The scheduled reminders, logged by the push function as it sends
+      // them. Nothing else records these, so without this the Sunday call
+      // and photo deadlines would be the only notifications missing here.
+      supabase
+        .from('activity_events')
+        .select('id, created_at, title, body')
         .order('created_at', { ascending: false })
         .limit(20),
     ]);
@@ -288,6 +297,10 @@ export default function HomeScreen() {
             : `request declined \u2014 ${r.custom_name}`,
         });
       }
+    }
+
+    for (const n of (notified ?? []) as any[]) {
+      rows.push({ id: `nt-${n.id}`, at: n.created_at, who: n.title, what: n.body });
     }
 
     rows.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
