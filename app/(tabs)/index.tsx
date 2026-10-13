@@ -58,7 +58,16 @@ type PendingRequest = {
 };
 type ActivityItem  = PointSubmission & { profiles?: { username: string; avatar_url: string | null } };
 
-const AVATAR_COLORS = ['#d45f2e','#3a6b4a','#7a6abf','#c4743a','#5a7abf','#b45a7a'];
+// One row of the Activity Center. Everything the app would notify you
+// about ends up here, from whichever table it actually lives in.
+type FeedItem = {
+  id: string;
+  at: string;            // ISO, what the feed sorts on
+  who: string;           // display name
+  what: string;          // the second line
+  points?: number;       // only points rows show a number on the right
+};
+
 
 const fmtLong  = (d: Date) => d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
 const fmtShort = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -100,12 +109,6 @@ const formatEventDate = (start: Date, end: Date | null) => {
 // "2026-06-15" in local time, for sorting (toISOString would shift the day)
 const toISODate = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-function avatarColor(name: string) {
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffffffff;
-  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
-}
-
 const CHICAGO = 'America/Chicago';
 
 // Highlight every day from start to end for the calendar's period marking.
@@ -161,7 +164,12 @@ const CATEGORY_LABELS: Record<string, string> = {
 export default function HomeScreen() {
   const router = useRouter();
   const { profile, familyName } = useAuth();
-  const [recentActivity,   setRecentActivity]   = useState<ActivityItem[]>([]);
+  const [feed,             setFeed]             = useState<FeedItem[]>([]);
+  // Snapshotted once per visit: the dots have to stay put while you read,
+  // so we compare against where you were when you arrived, not against
+  // the "seen" time we immediately write back.
+  const [seenAt,           setSeenAt]           = useState<string | null>(null);
+  const [seenSnapshotted,  setSeenSnapshotted]  = useState(false);
   const [refreshing,       setRefreshing]       = useState(false);
   const [events,           setEvents]           = useState<UpcomingEvent[]>([]);
   const [family,           setFamily]           = useState<FamilyMember[]>([]);
@@ -184,6 +192,8 @@ export default function HomeScreen() {
       { data: eventsData, error: eventsError },
       { data: requests },
       { data: reqVotes },
+      { data: photoEntries },
+      { data: allRequests },
     ] = await Promise.all([
       supabase
         .from('point_submissions')
@@ -198,7 +208,9 @@ export default function HomeScreen() {
         .from('upcoming_events')
         // Name the FK: profile_id and created_by both point at profiles,
         // so a bare profiles(username) embed is ambiguous and errors.
-        .select('*, profiles!profile_id(username)')
+        // profile_id is who the event is for; created_by is who added it.
+        // The feed needs the latter, so pull both under distinct aliases.
+        .select('*, profiles!profile_id(username), creator:profiles!created_by(username)')
         .order('event_date', { ascending: true }),
       supabase
         .from('point_requests')
@@ -208,9 +220,78 @@ export default function HomeScreen() {
       supabase
         .from('point_request_votes')
         .select('request_id, approve, voter_id'),
+      supabase
+        .from('photo_entries')
+        .select('id, created_at, caption, profiles(username)')
+        .order('created_at', { ascending: false })
+        .limit(20),
+      // Every request, not just the pending ones: the feed shows both the
+      // asking and how it was settled.
+      supabase
+        .from('point_requests')
+        .select('id, created_at, resolved_at, status, custom_name, points, profiles!requester_id(username)')
+        .order('created_at', { ascending: false })
+        .limit(20),
     ]);
 
-    if (activity)    setRecentActivity(activity as ActivityItem[]);
+    // Merge every source into one list, newest first. All of these are
+    // already scoped to your family by row level security.
+    const rows: FeedItem[] = [];
+
+    for (const a of (activity ?? []) as ActivityItem[]) {
+      rows.push({
+        id: `pt-${a.id}`,
+        at: a.submitted_at,
+        who: a.profiles?.username ?? 'Someone',
+        what: a.category === 'miscellaneous' && a.custom_name
+          ? a.custom_name
+          : CATEGORY_LABELS[a.category] ?? 'Points',
+        points: a.points,
+      });
+    }
+
+    for (const e of (eventsData ?? []) as any[]) {
+      rows.push({
+        id: `ev-${e.id}`,
+        at: e.created_at,
+        who: e.creator?.username ?? 'Someone',
+        what: `added ${e.icon ?? ''} ${e.name}`.replace(/\s+/g, ' ').trim(),
+      });
+    }
+
+    for (const ph of (photoEntries ?? []) as any[]) {
+      rows.push({
+        id: `ph-${ph.id}`,
+        at: ph.created_at,
+        who: ph.profiles?.username ?? 'Someone',
+        what: ph.caption
+          ? `entered the photo contest \u2014 ${ph.caption}`
+          : 'entered the photo contest',
+      });
+    }
+
+    for (const r of (allRequests ?? []) as any[]) {
+      const who = r.profiles?.username ?? 'Someone';
+      rows.push({
+        id: `rq-${r.id}`,
+        at: r.created_at,
+        who,
+        what: `asked for ${r.points} points for ${r.custom_name}`,
+      });
+      if (r.resolved_at && r.status !== 'pending') {
+        rows.push({
+          id: `rq-${r.id}-${r.status}`,
+          at: r.resolved_at,
+          who,
+          what: r.status === 'approved'
+            ? `request approved \u2014 ${r.custom_name}`
+            : `request declined \u2014 ${r.custom_name}`,
+        });
+      }
+    }
+
+    rows.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+    setFeed(rows.slice(0, 20));
     // A failed query left the list empty and looked identical to "no events",
     // which made a broken schema look like lost data.
     if (eventsError) console.error('upcoming_events fetch failed:', eventsError.message);
@@ -237,6 +318,22 @@ export default function HomeScreen() {
   }, [profile]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Take the read mark once per visit and immediately move it to now. The
+  // dots are drawn against the snapshot, so they stay put while you read
+  // and are gone the next time you come back.
+  useEffect(() => {
+    if (!profile || seenSnapshotted) return;
+    setSeenAt((profile as any).activity_seen_at ?? null);
+    setSeenSnapshotted(true);
+    supabase
+      .from('profiles')
+      .update({ activity_seen_at: new Date().toISOString() })
+      .eq('id', profile.id)
+      .then(({ error }) => {
+        if (error) console.error('activity seen update failed:', error.message);
+      });
+  }, [profile, seenSnapshotted]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -458,30 +555,28 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {/* ── RECENT POINTS ──────────────────────────────── */}
+        {/* ── ACTIVITY CENTER ──────────────── */}
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Recent Points</Text>
+          <Text style={styles.sectionLabel}>Activity Center</Text>
           <View style={styles.eventsCard}>
-            {recentActivity.length === 0 && (
+            {feed.length === 0 && (
               <View style={styles.eventItem}>
-                <Text style={styles.emptyText}>No activity yet — be the first to score!</Text>
+                <Text style={styles.emptyText}>Nothing yet — be the first to score!</Text>
               </View>
             )}
-            {recentActivity.map((item, i) => {
-              const name  = item.profiles?.username ?? 'Someone';
-              const label = item.category === 'miscellaneous' && item.custom_name
-                ? item.custom_name
-                : CATEGORY_LABELS[item.category];
+            {feed.map((item, i) => {
+              const unread = !!seenAt && item.at > seenAt;
               return (
-                <View key={item.id} style={[styles.ptItem, i < recentActivity.length - 1 && styles.eventBorder]}>
-                  <View style={[styles.ptDot, { backgroundColor: avatarColor(name) }]} />
+                <View key={item.id} style={[styles.ptItem, i < feed.length - 1 && styles.eventBorder]}>
+                  {/* Always the same width, dot or no dot, so rows line up */}
+                  <View style={styles.ptDotSlot}>{unread && <View style={styles.ptDotNew} />}</View>
                   <View style={styles.ptInfo}>
-                    <Text style={styles.ptName} numberOfLines={1}>{name}</Text>
-                    <Text style={styles.ptReason}>{label}</Text>
+                    <Text style={styles.ptName} numberOfLines={1}>{item.who}</Text>
+                    <Text style={styles.ptReason} numberOfLines={2}>{item.what}</Text>
                   </View>
                   <View style={styles.ptRight}>
-                    <Text style={styles.ptVal}>+{item.points}</Text>
-                    <Text style={styles.ptDate}>{formatDate(item.submitted_at)}</Text>
+                    {item.points !== undefined && <Text style={styles.ptVal}>+{item.points}</Text>}
+                    <Text style={styles.ptDate}>{formatDate(item.at)}</Text>
                   </View>
                 </View>
               );
@@ -651,7 +746,8 @@ const styles = StyleSheet.create({
 
   // Recent points
   ptItem:   { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 18, paddingVertical: 15 },
-  ptDot:    { width: 10, height: 10, borderRadius: 5, flexShrink: 0 },
+  ptDotSlot:{ width: 10, alignItems: 'center', flexShrink: 0 },
+  ptDotNew: { width: 10, height: 10, borderRadius: 5, backgroundColor: C.accent },
   ptInfo:   { flex: 1 },
   ptName:   { fontSize: 14, fontWeight: '600', color: C.ink },
   ptReason: { fontSize: 12, color: C.inkMid, marginTop: 2, fontStyle: 'italic' },
