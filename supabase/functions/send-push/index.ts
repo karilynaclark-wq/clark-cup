@@ -29,7 +29,10 @@ const CATEGORY_PHRASE: Record<string, string> = {
 
 type Recipient = {
   id: string;
-  token: string;
+  // Either channel may be missing: someone can have the app without
+  // notifications granted, or an account with no address on file.
+  token: string | null;
+  email: string | null;
   username: string;
   familyId: string | null;
   timezone: string | null;
@@ -84,7 +87,8 @@ function joinNames(names: string[]) {
 
 // build() runs per recipient so copy can use their own name.
 // Expo accepts at most 100 messages per request.
-async function pushEach(recipients: Recipient[], build: (r: Recipient) => Message) {
+async function pushEach(all: Recipient[], build: (r: Recipient) => Message) {
+  const recipients = all.filter((r) => r.token);
   if (recipients.length === 0) return { sent: 0 };
   let sent = 0;
   for (let i = 0; i < recipients.length; i += 100) {
@@ -100,6 +104,72 @@ async function pushEach(recipients: Recipient[], build: (r: Recipient) => Messag
     sent += batch.length;
   }
   return { sent };
+}
+
+const RESEND_URL = 'https://api.resend.com/emails/batch';
+
+// Plain, readable, and the same words as the push. Inlined styles because
+// mail clients strip stylesheets.
+function emailHtml(m: Message) {
+  const esc = (t: string) =>
+    t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;background:#f4efe7;padding:32px 16px">
+  <div style="max-width:480px;margin:0 auto;background:#fffdf9;border-radius:18px;padding:28px 26px">
+    <div style="font-size:12px;font-weight:600;letter-spacing:1.4px;text-transform:uppercase;color:#8a8278">Family Cup</div>
+    <h1 style="margin:10px 0 8px;font-size:22px;line-height:1.3;color:#1c1a16">${esc(m.title)}</h1>
+    <p style="margin:0;font-size:16px;line-height:1.55;color:#4a4540">${esc(m.body)}</p>
+  </div>
+  <div style="max-width:480px;margin:14px auto 0;text-align:center;font-size:12px;color:#8a8278">
+    You are getting this because you are in a Family Cup family.
+    Turn these off under Notifications in your profile.
+  </div>
+</div>`;
+}
+
+// Email alongside the push, same copy. Silently does nothing until
+// RESEND_API_KEY is set, so the notifications keep working regardless.
+async function emailEach(all: Recipient[], build: (r: Recipient) => Message) {
+  const key = Deno.env.get('RESEND_API_KEY');
+  if (!key) return { emailed: 0 };
+  const from = Deno.env.get('RESEND_FROM') ?? 'Family Cup <onboarding@resend.dev>';
+
+  const recipients = all.filter((r) => r.email);
+  if (recipients.length === 0) return { emailed: 0 };
+
+  let emailed = 0;
+  // Resend takes up to 100 messages per batch request.
+  for (let i = 0; i < recipients.length; i += 100) {
+    const batch = recipients.slice(i, i + 100).map((r) => {
+      const m = build(r);
+      return { from, to: [r.email], subject: m.title, html: emailHtml(m) };
+    });
+    try {
+      const res = await fetch(RESEND_URL, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(batch),
+      });
+      if (!res.ok) {
+        console.error(`Resend failed: ${res.status} ${await res.text()}`);
+        continue;
+      }
+      emailed += batch.length;
+    } catch (e) {
+      // A mail outage must never take the push notification down with it.
+      console.error('Resend threw:', (e as Error).message);
+    }
+  }
+  return { emailed };
+}
+
+// Both channels, one copy. Everything except the Sunday call uses this;
+// the Sunday reminder stays push-only on purpose.
+async function notifyEach(recipients: Recipient[], build: (r: Recipient) => Message) {
+  const [push, mail] = await Promise.all([
+    pushEach(recipients, build),
+    emailEach(recipients, build),
+  ]);
+  return { ...push, ...mail };
 }
 
 // Record what we told a family, in the words we told them, so the
@@ -148,22 +218,24 @@ Deno.serve(async (req) => {
   const now = chicagoNow();
 
   // Everyone who has opened the app and granted permission.
+  // Anyone reachable by either channel. This used to be push tokens only;
+  // email reaches people who never granted notifications, so the filter
+  // moved down into the senders themselves.
   const { data: people, error: peopleErr } = await supabase
     .from('profiles')
-    .select('id, username, push_token, timezone, notify, family_id')
-    .not('push_token', 'is', null);
+    .select('id, username, email, push_token, timezone, notify, family_id')
+    .or('push_token.not.is.null,email.not.is.null');
   if (peopleErr) return Response.json({ error: peopleErr.message }, { status: 500 });
 
-  const everyone: Recipient[] = (people ?? [])
-    .filter((p) => p.push_token)
-    .map((p) => ({
-      id: (p as any).id as string,
-      token: p.push_token as string,
-      username: p.username as string,
-      familyId: (p as any).family_id ?? null,
-      timezone: (p as any).timezone ?? null,
-      notify: (p as any).notify ?? null,
-    }));
+  const everyone: Recipient[] = (people ?? []).map((p) => ({
+    id: (p as any).id as string,
+    token: (p as any).push_token ?? null,
+    email: (p as any).email ?? null,
+    username: p.username as string,
+    familyId: (p as any).family_id ?? null,
+    timezone: (p as any).timezone ?? null,
+    notify: (p as any).notify ?? null,
+  }));
 
   // Opt-out, not opt-in: a missing preference means they want it.
   const wants = (key: string) => everyone.filter((r) => r.notify?.[key] !== false);
@@ -222,7 +294,7 @@ Deno.serve(async (req) => {
       const body  = rest > 0
         ? `${shown} · and ${rest} more`
         : lines.length === 1 ? `${shown}!` : shown;
-      const r = await pushEach(audience, () => ({ title: '🏆 New points', body }));
+      const r = await notifyEach(audience, () => ({ title: '🏆 New points', body }));
       sent += r.sent;
     }
 
@@ -267,7 +339,7 @@ Deno.serve(async (req) => {
           body: `Tomorrow: ${joinNames(list.map((e) => e.name))}!`,
         };
       }
-      const r = await pushEach(audience, () => message);
+      const r = await notifyEach(audience, () => message);
       await logActivity(supabase, [familyId], 'event_reminder', tomorrow, message.title, message.body);
       sent += r.sent;
     }
@@ -307,7 +379,7 @@ Deno.serve(async (req) => {
       const audience = wants('points').filter((x) => x.familyId === r.family_id);
       if (audience.length > 0) {
         const who = r.profiles?.username ?? 'Someone';
-        await pushEach(audience, () => ({
+        await notifyEach(audience, () => ({
           title: '🙋 Points requested',
           body: `${who} is asking for ${r.points} points for ${r.custom_name}. Approve or decline in the app.`,
         }));
@@ -432,7 +504,7 @@ Deno.serve(async (req) => {
       const body = a.names.length > 1
         ? `${who} tied with ${a.hearts} ${a.hearts === 1 ? 'heart' : 'hearts'} each — 100 points apiece.`
         : `${who} won with ${a.hearts} ${a.hearts === 1 ? 'heart' : 'hearts'} — 100 points.`;
-      const r = await pushEach(audience, () => ({ title: '📸 Photo contest winner', body }));
+      const r = await notifyEach(audience, () => ({ title: '📸 Photo contest winner', body }));
       await logActivity(supabase, [a.familyId], 'photo_award', week, '📸 Photo contest winner', body);
       told += r.sent;
     }
@@ -484,7 +556,7 @@ Deno.serve(async (req) => {
       ? { title: '📸 Submit your photo!', body: 'Reminder: the deadline to submit your photo is today.' }
       : { title: '🗳️ Vote!',              body: 'Reminder: the deadline to vote on a photo is today.' };
 
-    const result = await pushEach(due, () => message);
+    const result = await notifyEach(due, () => message);
 
     // Keyed on the contest week, not the day: this job runs every hour and
     // reaches each time zone as its own 5pm arrives, so a single reminder
