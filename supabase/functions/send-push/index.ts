@@ -250,8 +250,28 @@ Deno.serve(async (req) => {
   // force skips the clock gate on the photo reminders, for sending one on
   // purpose rather than waiting for 5pm to come round. Still behind the
   // cron secret, so only we can ask for it.
-  const { job, force } = await req.json().catch(() => ({ job: null, force: false }));
+  const { job, force, to } = await req.json()
+    .catch(() => ({ job: null, force: false, to: null }));
   const now = chicagoNow();
+
+  // Proves the mail path end to end without troubling the family: one
+  // address, named in the request, and nothing else happens.
+  if (job === 'email_test') {
+    if (!to) return Response.json({ error: 'email_test needs a "to" address' }, { status: 400 });
+    const only: Recipient = {
+      id: 'test', token: null, email: to as string,
+      username: 'Hufflepuff', familyId: null, timezone: null, notify: null,
+    };
+    const r = await emailEach(
+      [only],
+      () => ({
+        title: '🦉 Owl post',
+        body: 'If this landed in your inbox, the Clark Cup emails are working. The button below should open the app.',
+      }),
+      OPEN_CONTEST('Open the photo contest'),
+    );
+    return Response.json({ job, to, ...r });
+  }
 
   // Everyone who has opened the app and granted permission.
   // Anyone reachable by either channel. This used to be push tokens only;
