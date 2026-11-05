@@ -16,6 +16,7 @@
 // per recipient, so the Sunday reminder can greet each person by name.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { SMTPClient } from 'https://deno.land/x/denomailer@1.6.0/mod.ts';
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 const CHICAGO = 'America/Chicago';
@@ -106,8 +107,6 @@ async function pushEach(all: Recipient[], build: (r: Recipient) => Message) {
   return { sent };
 }
 
-const RESEND_URL = 'https://api.resend.com/emails/batch';
-
 // Every subject is prefixed so the family can spot and filter these.
 const SUBJECT_PREFIX = 'Clark Cup: ';
 // The app's own green, from the logo and the splash screen.
@@ -146,47 +145,51 @@ function emailHtml(m: Message, action?: EmailAction) {
 </div>`;
 }
 
-// Email alongside the push, same copy. Silently does nothing until
-// RESEND_API_KEY is set, so the notifications keep working regardless.
+// Email alongside the push, same copy, sent through Gmail. A proper
+// sending service wants a domain you own, which this family does not
+// have; for five people Gmail's own SMTP is plenty and costs nothing.
+//
+// Silently does nothing until the two secrets are set, so notifications
+// keep working regardless.
 async function emailEach(
   all: Recipient[],
   build: (r: Recipient) => Message,
   action?: EmailAction,
 ) {
-  const key = Deno.env.get('RESEND_API_KEY');
-  if (!key) return { emailed: 0 };
-  const from = Deno.env.get('RESEND_FROM') ?? 'Family Cup <onboarding@resend.dev>';
+  const user = Deno.env.get('GMAIL_USER');
+  const pass = Deno.env.get('GMAIL_APP_PASSWORD');
+  if (!user || !pass) return { emailed: 0 };
 
   const recipients = all.filter((r) => r.email);
   if (recipients.length === 0) return { emailed: 0 };
 
+  // One connection for the whole batch rather than one per person.
+  const client = new SMTPClient({
+    connection: {
+      hostname: 'smtp.gmail.com',
+      port: 465,
+      tls: true,
+      auth: { username: user, password: pass },
+    },
+  });
+
   let emailed = 0;
-  // Resend takes up to 100 messages per batch request.
-  for (let i = 0; i < recipients.length; i += 100) {
-    const batch = recipients.slice(i, i + 100).map((r) => {
+  try {
+    for (const r of recipients) {
       const m = build(r);
-      return {
-        from,
-        to: [r.email],
+      await client.send({
+        from: `Clark Cup <${user}>`,
+        to: r.email as string,
         subject: SUBJECT_PREFIX + m.title,
         html: emailHtml(m, action),
-      };
-    });
-    try {
-      const res = await fetch(RESEND_URL, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(batch),
       });
-      if (!res.ok) {
-        console.error(`Resend failed: ${res.status} ${await res.text()}`);
-        continue;
-      }
-      emailed += batch.length;
-    } catch (e) {
-      // A mail outage must never take the push notification down with it.
-      console.error('Resend threw:', (e as Error).message);
+      emailed += 1;
     }
+  } catch (e) {
+    // A mail failure must never take the push notification down with it.
+    console.error('SMTP failed:', (e as Error).message);
+  } finally {
+    try { await client.close(); } catch { /* nothing to close */ }
   }
   return { emailed };
 }
