@@ -24,7 +24,7 @@ const CHICAGO = 'America/Chicago';
 const CATEGORY_PHRASE: Record<string, string> = {
   sunday_call:   'the Sunday call',
   weekly_photo:  'the photo contest',
-  miscellaneous: 'being awesome',
+  miscellaneous: 'services to the family',
 };
 
 type Recipient = {
@@ -301,10 +301,12 @@ Deno.serve(async (req) => {
         if (!g.names.includes(who)) g.names.push(who);
         byReason.set(key, g);
       }
+      // The family named themselves after the houses, so the house-points
+      // cadence lands: "Fifty points to Hufflepuff, for the Sunday call."
       return [...byReason.values()].map((g) =>
         g.names.length === 1
-          ? `${g.names[0]} just got ${g.points} points for ${g.what}`
-          : `${joinNames(g.names)} each got ${g.points} points for ${g.what}`,
+          ? `${g.points} points to ${g.names[0]}, for ${g.what}`
+          : `${g.points} points each to ${joinNames(g.names)}, for ${g.what}`,
       );
     };
 
@@ -327,7 +329,7 @@ Deno.serve(async (req) => {
       const body  = rest > 0
         ? `${shown} · and ${rest} more`
         : lines.length === 1 ? `${shown}!` : shown;
-      const r = await notifyEach(audience, () => ({ title: '🏆 New points', body }));
+      const r = await notifyEach(audience, () => ({ title: '🏆 Points have been awarded', body }));
       sent += r.sent;
     }
 
@@ -364,12 +366,12 @@ Deno.serve(async (req) => {
       if (list.length === 1) {
         const who = list[0].profiles?.username;
         message = who
-          ? { title: `Have fun, ${who}!`, body: `${list[0].name} is tomorrow for ${who}!` }
-          : { title: 'Have fun, everyone!', body: `${list[0].name} is tomorrow!` };
+          ? { title: `🧳 Pack your trunk, ${who}!`, body: `${list[0].name} is tomorrow. Go on, then.` }
+          : { title: '🧳 Pack your trunks!', body: `${list[0].name} is tomorrow. Go on, then.` };
       } else {
         message = {
-          title: 'Have fun, everyone!',
-          body: `Tomorrow: ${joinNames(list.map((e) => e.name))}!`,
+          title: '🧳 Pack your trunks!',
+          body: `Tomorrow brings ${joinNames(list.map((e) => e.name))}. Busy week for this family.`,
         };
       }
       const r = await notifyEach(audience, () => message);
@@ -388,12 +390,12 @@ Deno.serve(async (req) => {
       return Response.json({ skipped: `not 9:30 Sunday in Chicago (${now.weekday} ${now.hour}:${now.minute})` });
     }
     const result = await pushEach(recipients, (r) => ({
-      title: `Happy Sunday, ${r.username}!`,
-      body:  'The family call is in 30 minutes — talk soon.',
+      title: `🔮 Gather round, ${r.username}!`,
+      body:  'The family call starts in 30 minutes. No Floo powder required.',
     }));
     await logActivity(
       supabase, recipients.map((r) => r.familyId), 'sunday', now.date,
-      'Happy Sunday!', 'The family call is in 30 minutes — talk soon.',
+      '🔮 Gather round!', 'The family call starts in 30 minutes. No Floo powder required.',
     );
     return Response.json({ job, ...result });
   }
@@ -413,8 +415,8 @@ Deno.serve(async (req) => {
       if (audience.length > 0) {
         const who = r.profiles?.username ?? 'Someone';
         await notifyEach(audience, () => ({
-          title: '🙋 Points requested',
-          body: `${who} is asking for ${r.points} points for ${r.custom_name}. Approve or decline in the app.`,
+          title: '🦉 Owl post',
+          body: `${who} petitions the family for ${r.points} points, for ${r.custom_name}. Grant it or deny it — silence counts as a yes after 48 hours.`,
         }), OPEN_REQUEST);
         announced += audience.length;
       }
@@ -535,14 +537,14 @@ Deno.serve(async (req) => {
       if (audience.length === 0 || a.names.length === 0) continue;
       const who = joinNames(a.names);
       const body = a.names.length > 1
-        ? `${who} tied with ${a.hearts} ${a.hearts === 1 ? 'heart' : 'hearts'} each — 100 points apiece.`
-        : `${who} won with ${a.hearts} ${a.hearts === 1 ? 'heart' : 'hearts'} — 100 points.`;
+        ? `${who} cannot be separated — ${a.hearts} ${a.hearts === 1 ? 'heart' : 'hearts'} each, and 100 points apiece.`
+        : `${who} takes the week with ${a.hearts} ${a.hearts === 1 ? 'heart' : 'hearts'}. 100 points, richly deserved.`;
       const r = await notifyEach(
         audience,
-        () => ({ title: '📸 Photo contest winner', body }),
+        () => ({ title: '🏆 And the winner is...', body }),
         OPEN_CONTEST('See the photo'),
       );
-      await logActivity(supabase, [a.familyId], 'photo_award', week, '📸 Photo contest winner', body);
+      await logActivity(supabase, [a.familyId], 'photo_award', week, '🏆 And the winner is...', body);
       told += r.sent;
     }
 
@@ -590,8 +592,10 @@ Deno.serve(async (req) => {
     if (due.length === 0) return Response.json({ skipped: 'everyone at 5pm has already done it' });
 
     const message: Message = job === 'photo_submit'
-      ? { title: '📸 Submit your photo!', body: 'Reminder: the deadline to submit your photo is today.' }
-      : { title: '🗳️ Vote!',              body: 'Reminder: the deadline to vote on a photo is today.' };
+      ? { title: '📸 The Daily Prophet needs a cover',
+          body:  'Entries close tonight. Send your best one before the owls fly.' }
+      : { title: '🗳️ Cast your vote',
+          body:  'Voting closes tonight. Pick the photo worthy of the front page.' };
 
     const result = await notifyEach(
       due,
