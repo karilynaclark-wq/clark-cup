@@ -113,11 +113,15 @@ const SUBJECT_PREFIX = 'Clark Cup: ';
 const GREEN      = '#3a6b4a';
 const GREEN_DEEP = '#1B4332';
 
-// Where a button sends you. The app registers the clarkcup:// scheme, and
-// expo-router drops the (tabs) group from the path.
+// Where a button sends you. These have to be https: mail clients strip
+// an href whose scheme they do not recognise, so a clarkcup:// link
+// arrives as styled text with nothing to click. The /open function is an
+// https URL they keep, which then hands over to the app.
 type EmailAction = { label: string; url: string };
-const OPEN_REQUEST = { label: 'Approve or decline', url: 'clarkcup:///' };
-const OPEN_CONTEST = (label: string) => ({ label, url: 'clarkcup:///photo-contest' });
+const OPEN = (to: string) =>
+  `https://tdprtdazqneazisdpqls.functions.supabase.co/open?to=${to}`;
+const OPEN_REQUEST = { label: 'Approve or decline', url: OPEN('home') };
+const OPEN_CONTEST = (label: string) => ({ label, url: OPEN('photo-contest') });
 
 // Plain, readable, and the same words as the push. Inlined styles because
 // mail clients strip stylesheets.
