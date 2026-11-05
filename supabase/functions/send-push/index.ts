@@ -108,16 +108,36 @@ async function pushEach(all: Recipient[], build: (r: Recipient) => Message) {
 
 const RESEND_URL = 'https://api.resend.com/emails/batch';
 
+// Every subject is prefixed so the family can spot and filter these.
+const SUBJECT_PREFIX = 'Clark Cup: ';
+// The app's own green, from the logo and the splash screen.
+const GREEN      = '#3a6b4a';
+const GREEN_DEEP = '#1B4332';
+
+// Where a button sends you. The app registers the clarkcup:// scheme, and
+// expo-router drops the (tabs) group from the path.
+type EmailAction = { label: string; url: string };
+const OPEN_REQUEST = { label: 'Approve or decline', url: 'clarkcup:///' };
+const OPEN_CONTEST = (label: string) => ({ label, url: 'clarkcup:///photo-contest' });
+
 // Plain, readable, and the same words as the push. Inlined styles because
 // mail clients strip stylesheets.
-function emailHtml(m: Message) {
+function emailHtml(m: Message, action?: EmailAction) {
   const esc = (t: string) =>
     t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  // Only on the ones that actually want something from you. A button on a
+  // notification with nothing to do is just another thing to ignore.
+  const button = action
+    ? `<a href="${action.url}" style="display:inline-block;margin-top:20px;background:${GREEN};color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;padding:13px 24px;border-radius:999px">${esc(action.label)}</a>`
+    : '';
+
   return `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;background:#f4efe7;padding:32px 16px">
-  <div style="max-width:480px;margin:0 auto;background:#fffdf9;border-radius:18px;padding:28px 26px">
-    <div style="font-size:12px;font-weight:600;letter-spacing:1.4px;text-transform:uppercase;color:#8a8278">Family Cup</div>
+  <div style="max-width:480px;margin:0 auto;background:#fffdf9;border-radius:18px;border-top:5px solid ${GREEN_DEEP};padding:28px 26px">
+    <div style="font-size:12px;font-weight:600;letter-spacing:1.4px;text-transform:uppercase;color:${GREEN}">Clark Cup</div>
     <h1 style="margin:10px 0 8px;font-size:22px;line-height:1.3;color:#1c1a16">${esc(m.title)}</h1>
     <p style="margin:0;font-size:16px;line-height:1.55;color:#4a4540">${esc(m.body)}</p>
+    ${button}
   </div>
   <div style="max-width:480px;margin:14px auto 0;text-align:center;font-size:12px;color:#8a8278">
     You are getting this because you are in a Family Cup family.
@@ -128,7 +148,11 @@ function emailHtml(m: Message) {
 
 // Email alongside the push, same copy. Silently does nothing until
 // RESEND_API_KEY is set, so the notifications keep working regardless.
-async function emailEach(all: Recipient[], build: (r: Recipient) => Message) {
+async function emailEach(
+  all: Recipient[],
+  build: (r: Recipient) => Message,
+  action?: EmailAction,
+) {
   const key = Deno.env.get('RESEND_API_KEY');
   if (!key) return { emailed: 0 };
   const from = Deno.env.get('RESEND_FROM') ?? 'Family Cup <onboarding@resend.dev>';
@@ -141,7 +165,12 @@ async function emailEach(all: Recipient[], build: (r: Recipient) => Message) {
   for (let i = 0; i < recipients.length; i += 100) {
     const batch = recipients.slice(i, i + 100).map((r) => {
       const m = build(r);
-      return { from, to: [r.email], subject: m.title, html: emailHtml(m) };
+      return {
+        from,
+        to: [r.email],
+        subject: SUBJECT_PREFIX + m.title,
+        html: emailHtml(m, action),
+      };
     });
     try {
       const res = await fetch(RESEND_URL, {
@@ -164,10 +193,14 @@ async function emailEach(all: Recipient[], build: (r: Recipient) => Message) {
 
 // Both channels, one copy. Everything except the Sunday call uses this;
 // the Sunday reminder stays push-only on purpose.
-async function notifyEach(recipients: Recipient[], build: (r: Recipient) => Message) {
+async function notifyEach(
+  recipients: Recipient[],
+  build: (r: Recipient) => Message,
+  action?: EmailAction,
+) {
   const [push, mail] = await Promise.all([
     pushEach(recipients, build),
-    emailEach(recipients, build),
+    emailEach(recipients, build, action),
   ]);
   return { ...push, ...mail };
 }
@@ -382,7 +415,7 @@ Deno.serve(async (req) => {
         await notifyEach(audience, () => ({
           title: '🙋 Points requested',
           body: `${who} is asking for ${r.points} points for ${r.custom_name}. Approve or decline in the app.`,
-        }));
+        }), OPEN_REQUEST);
         announced += audience.length;
       }
       await supabase.from('point_requests')
@@ -504,7 +537,11 @@ Deno.serve(async (req) => {
       const body = a.names.length > 1
         ? `${who} tied with ${a.hearts} ${a.hearts === 1 ? 'heart' : 'hearts'} each — 100 points apiece.`
         : `${who} won with ${a.hearts} ${a.hearts === 1 ? 'heart' : 'hearts'} — 100 points.`;
-      const r = await notifyEach(audience, () => ({ title: '📸 Photo contest winner', body }));
+      const r = await notifyEach(
+        audience,
+        () => ({ title: '📸 Photo contest winner', body }),
+        OPEN_CONTEST('See the photo'),
+      );
       await logActivity(supabase, [a.familyId], 'photo_award', week, '📸 Photo contest winner', body);
       told += r.sent;
     }
@@ -556,7 +593,11 @@ Deno.serve(async (req) => {
       ? { title: '📸 Submit your photo!', body: 'Reminder: the deadline to submit your photo is today.' }
       : { title: '🗳️ Vote!',              body: 'Reminder: the deadline to vote on a photo is today.' };
 
-    const result = await notifyEach(due, () => message);
+    const result = await notifyEach(
+      due,
+      () => message,
+      OPEN_CONTEST(job === 'photo_submit' ? 'Submit your photo' : 'Vote now'),
+    );
 
     // Keyed on the contest week, not the day: this job runs every hour and
     // reaches each time zone as its own 5pm arrives, so a single reminder
