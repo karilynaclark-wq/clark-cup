@@ -11,6 +11,8 @@
 //   photo_vote   — Tuesdays 5pm, in each person's own time zone
 //   photo_award  — Wednesdays: 100 points to the most-hearted photo
 //   requests     — every 10 min: announce new point requests, approve stale ones
+//   ranks        — every 5 min:  announce anyone who climbed past someone
+//                  on the leaderboard, whatever moved the points
 //
 // Everyone with a saved push token gets every notification. Copy is built
 // per recipient, so the Sunday reminder can greet each person by name.
@@ -367,6 +369,126 @@ Deno.serve(async (req) => {
       .in('id', (fresh as any[]).map((s) => s.id));
 
     return Response.json({ job, entries: fresh.length, families: byFamily.size, sent });
+  }
+
+  // ── Standings ───────────────────────────────────────────────────
+  // Every few minutes, compare the leaderboard to the last time we
+  // looked. Anyone who climbed past someone gets announced. Runs on its
+  // own rather than inside the points job so it also catches the moves
+  // caused by a photo award, an approved request, or points added by
+  // hand in the database.
+  if (job === 'ranks') {
+    const { data: people, error } = await supabase
+      .from('profiles')
+      .select('id, username, total_points, family_id')
+      .not('family_id', 'is', null);
+    if (error) return Response.json({ error: error.message }, { status: 500 });
+
+    const { data: snaps } = await supabase
+      .from('rank_snapshots')
+      .select('family_id, standings');
+    const previous = new Map<string, Record<string, number>>();
+    for (const s of (snaps ?? []) as any[]) previous.set(s.family_id, s.standings ?? {});
+
+    // Standard competition ranking: equal points share a place, so two
+    // people tied for 2nd are both 2nd and the next is 4th.
+    const rankOf = (members: any[]) => {
+      const sorted = [...members].sort((a, b) => b.total_points - a.total_points);
+      const ranks: Record<string, number> = {};
+      sorted.forEach((m, i) => {
+        const tied = sorted.findIndex((x) => x.total_points === m.total_points);
+        ranks[m.id] = tied + 1;
+      });
+      return ranks;
+    };
+
+    const ordinal = (n: number) => {
+      const suffix = n % 100 >= 11 && n % 100 <= 13 ? 'th'
+        : n % 10 === 1 ? 'st' : n % 10 === 2 ? 'nd' : n % 10 === 3 ? 'rd' : 'th';
+      return `${n}${suffix}`;
+    };
+
+    const byFamily = new Map<string, any[]>();
+    for (const p of (people ?? []) as any[]) {
+      byFamily.set(p.family_id, [...(byFamily.get(p.family_id) ?? []), p]);
+    }
+
+    let sent = 0;
+    const snapshots: any[] = [];
+    for (const [familyId, members] of byFamily) {
+      const now = rankOf(members);
+      snapshots.push({ family_id: familyId, standings: now, updated_at: new Date().toISOString() });
+
+      const before = previous.get(familyId);
+      // First time we have seen this family: record where they stand and
+      // say nothing, rather than announcing a move nobody made.
+      if (!before || Object.keys(before).length === 0) continue;
+      if (members.length < 2) continue;
+
+      const name = (id: string) => members.find((m) => m.id === id)?.username ?? 'Someone';
+      const points = (id: string) => members.find((m) => m.id === id)?.total_points ?? 0;
+
+      // Someone moved up if their place number got smaller. Whoever they
+      // passed was ahead of them before and is behind them now -- a tie
+      // counts as neither, so drawing level is not announced as a pass.
+      const lines: { lead: boolean; text: string }[] = [];
+      for (const m of members) {
+        const was = before[m.id];
+        if (was === undefined || now[m.id] >= was) continue;
+        const passed = members
+          .filter((x) => before[x.id] !== undefined
+            && before[x.id] < was
+            && now[x.id] > now[m.id])
+          .sort((a, b) => now[a.id] - now[b.id]);
+        if (passed.length === 0) continue;
+
+        const place = now[m.id];
+        const gap = points(m.id) - points(passed[0].id);
+        lines.push(place === 1
+          ? {
+              lead: true,
+              text: `${m.username} has taken the Cup from ${joinNames(passed.map((x) => x.username))}, ahead by ${gap} ${gap === 1 ? 'point' : 'points'}.`,
+            }
+          : {
+              lead: false,
+              text: `${m.username} climbs past ${joinNames(passed.map((x) => x.username))} into ${ordinal(place)}, by ${gap} ${gap === 1 ? 'point' : 'points'}.`,
+            });
+      }
+      if (lines.length === 0) continue;
+
+      const audience = wants('ranks').filter((r) => r.familyId === familyId);
+      if (audience.length === 0) continue;
+
+      const message: Message = {
+        title: lines.some((l) => l.lead) ? '👑 The Cup changes hands' : '⏳ The hourglasses have shifted',
+        body: lines.map((l) => l.text).join(' '),
+      };
+      const r = await notifyEach(
+        audience,
+        () => message,
+        { label: 'See the standings', url: OPEN('leaderboard') },
+      );
+      sent += r.sent;
+
+      // Keyed on the resulting order, so a retry after a failed send
+      // cannot log the same shuffle twice.
+      const key = members
+        .map((m) => `${m.id}:${now[m.id]}`)
+        .sort()
+        .join(',');
+      await logActivity(supabase, [familyId], 'rank_change', key, message.title, message.body);
+    }
+
+    // Written last: if the send threw, the old snapshot survives and the
+    // next run tries again rather than swallowing the move.
+    if (snapshots.length > 0) {
+      const { error: snapErr } = await supabase
+        .from('rank_snapshots')
+        .upsert(snapshots, { onConflict: 'family_id' });
+      if (snapErr) console.error('snapshot save failed:', snapErr.message);
+    }
+
+    return Response.json({ job, families: byFamily.size, sent });
   }
 
   if (job === 'events') {

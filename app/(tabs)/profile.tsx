@@ -67,6 +67,7 @@ export default function ProfileScreen() {
     { key: 'events', label: 'Event reminders', detail: 'The day before something is happening' },
     { key: 'sunday', label: 'Sunday call',     detail: '30 minutes before the family call' },
     { key: 'photo',  label: 'Photo contest',   detail: 'Submit and vote deadline reminders' },
+    { key: 'ranks',  label: 'Standings',       detail: 'When someone climbs past someone else' },
   ];
   const notify = (profile as any)?.notify ?? {};
   const setNotify = async (key: string, on: boolean) => {
