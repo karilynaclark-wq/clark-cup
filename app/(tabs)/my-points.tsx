@@ -427,14 +427,9 @@ export default function PointsScreen() {
 
       {/* Submit button */}
       <View style={styles.submitWrap}>
-        <View style={styles.actionRow}>
-        <TouchableOpacity style={styles.submitBtn} onPress={() => { setAsking(false); setSubmitModal(true); }} activeOpacity={0.8}>
-          <Text style={styles.submitBtnText}>+ Add Points</Text>
+        <TouchableOpacity style={styles.submitBtn} onPress={() => { setAsking(true); setSubmitModal(true); }} activeOpacity={0.8}>
+          <Text style={styles.submitBtnText}>Request Points</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.requestBtn} onPress={() => { setAsking(true); setSubmitModal(true); }} activeOpacity={0.8}>
-          <Text style={styles.requestBtnText}>Request Points</Text>
-        </TouchableOpacity>
-        </View>
       </View>
 
       {/* Activity header */}
@@ -740,11 +735,8 @@ const styles = StyleSheet.create({
 
   // Submit button
   submitWrap:    { paddingHorizontal: 20, paddingTop: 14 },
-  actionRow:     { flexDirection: 'row', gap: 10 },
   submitBtn:     { flex: 1, backgroundColor: C.ink, borderRadius: 22, paddingVertical: 17, alignItems: 'center' },
-  requestBtn:    { flex: 1, backgroundColor: C.card, borderWidth: 1, borderColor: C.ink, borderRadius: 22, paddingVertical: 17, alignItems: 'center' },
-  requestBtnText:{ color: C.ink, fontSize: 16, fontWeight: '700' },
-  submitBtnText: { color: '#fff', fontSize: 15, fontWeight: '600', letterSpacing: 0.1 },
+  submitBtnText: { color: '#fff', fontSize: 16, fontWeight: '700', letterSpacing: 0.1 },
 
   // Activity list
   activityCard: { backgroundColor: C.card, borderRadius: 22, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 3, marginHorizontal: 20 },
