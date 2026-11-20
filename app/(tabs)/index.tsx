@@ -567,9 +567,17 @@ export default function HomeScreen() {
                 const isPoll  = options.length > 1;
                 // "Kelly · +50" when it is their own, "Kari → Kelly" when
                 // one of them nominated the other.
+                // A poll keeps its amounts out of the heading: they are on
+                // the buttons directly below, so repeating them only costs
+                // the names room and truncates them.
+                const amount  = isPoll ? '' : ` · +${req.points}`;
                 const heading = req.beneficiary_id === req.requester_id
-                  ? `${asker} · ${isPoll ? options.join(' / ') : `+${req.points}`}`
-                  : `${asker} → ${forWhom} · ${isPoll ? options.join(' / ') : `+${req.points}`}`;
+                  ? `${asker}${amount}`
+                  : `${asker} → ${forWhom}${amount}`;
+                // Once the buttons are gone -- you voted, or it is your own
+                // windfall -- the amounts have nowhere else to show.
+                const showButtons = !isForMe && voted === undefined;
+                const amountsTail = isPoll && !showButtons ? ` · ${options.join('/')}` : '';
                 return (
                   <View key={req.id} style={[styles.pendingRow, i < pending.length - 1 && styles.pendingBorder]}>
                     <View style={{ flex: 1, paddingRight: 10 }}>
@@ -584,10 +592,11 @@ export default function HomeScreen() {
                             : voted
                               ? (picked != null ? ` · you picked ${picked}` : ' · you approved')
                               : ' · you declined'}
+                        {amountsTail}
                       </Text>
                       {/* A poll puts its amounts on their own line: three
                           buttons and a Decline will not fit beside the text. */}
-                      {isPoll && !isForMe && voted === undefined && (
+                      {isPoll && showButtons && (
                         <View style={styles.pollRow}>
                           {options.map((o) => (
                             <TouchableOpacity
@@ -603,7 +612,7 @@ export default function HomeScreen() {
                         </View>
                       )}
                     </View>
-                    {!isPoll && !isForMe && voted === undefined && (
+                    {!isPoll && showButtons && (
                       <View style={styles.pendingBtns}>
                         <TouchableOpacity style={styles.declineBtn} onPress={() => voteOnRequest(req.id, false)}>
                           <Text style={styles.declineText}>Decline</Text>
