@@ -51,10 +51,13 @@ type FamilyMember = { id: string; username: string; total_points: number };
 type PendingRequest = {
   id: string;
   requester_id: string;
+  beneficiary_id: string;
   custom_name: string;
   points: number;
+  options: number[] | null;
   created_at: string;
   profiles?: { username: string } | null;
+  beneficiary?: { username: string } | null;
 };
 type ActivityItem  = PointSubmission & { profiles?: { username: string; avatar_url: string | null } };
 
@@ -175,6 +178,7 @@ export default function HomeScreen() {
   const [family,           setFamily]           = useState<FamilyMember[]>([]);
   const [pending,          setPending]          = useState<PendingRequest[]>([]);
   const [myVotes,          setMyVotes]          = useState<Record<string, boolean>>({});
+  const [myChoice,         setMyChoice]         = useState<Record<string, number | null>>({});
   const [newEventFor,      setNewEventFor]      = useState<string | null>(null);
   const [addEventModal,    setAddEventModal]    = useState(false);
   const [newEventDate,     setNewEventDate]     = useState<Date>(new Date());
@@ -215,12 +219,14 @@ export default function HomeScreen() {
         .order('event_date', { ascending: true }),
       supabase
         .from('point_requests')
-        .select('id, requester_id, custom_name, points, created_at, profiles!requester_id(username)')
+        // Two embeds onto profiles, so both need naming: who asked, and
+        // who the points would go to. They are often the same person.
+        .select('id, requester_id, beneficiary_id, custom_name, points, options, created_at, profiles!requester_id(username), beneficiary:profiles!beneficiary_id(username)')
         .eq('status', 'pending')
         .order('created_at', { ascending: true }),
       supabase
         .from('point_request_votes')
-        .select('request_id, approve, voter_id'),
+        .select('request_id, approve, voter_id, choice'),
       supabase
         .from('photo_entries')
         .select('id, created_at, caption, profiles(username)')
@@ -230,7 +236,7 @@ export default function HomeScreen() {
       // asking and how it was settled.
       supabase
         .from('point_requests')
-        .select('id, created_at, resolved_at, status, custom_name, points, profiles!requester_id(username)')
+        .select('id, created_at, resolved_at, status, custom_name, points, options, requester_id, beneficiary_id, profiles!requester_id(username), beneficiary:profiles!beneficiary_id(username)')
         .order('created_at', { ascending: false })
         .limit(20),
       // The scheduled reminders, logged by the push function as it sends
@@ -281,11 +287,17 @@ export default function HomeScreen() {
 
     for (const r of (allRequests ?? []) as any[]) {
       const who = r.profiles?.username ?? 'Someone';
+      const forWhom = r.beneficiary?.username ?? who;
+      const amount  = (r.options ?? []).length > 1
+        ? (r.options as number[]).join('/')
+        : `${r.points}`;
       rows.push({
         id: `rq-${r.id}`,
         at: r.created_at,
         who,
-        what: `asked for ${r.points} points for ${r.custom_name}`,
+        what: r.beneficiary_id === r.requester_id
+          ? `asked for ${amount} points for ${r.custom_name}`
+          : `nominated ${forWhom} for ${amount} points — ${r.custom_name}`,
       });
       if (r.resolved_at && r.status !== 'pending') {
         rows.push({
@@ -323,10 +335,14 @@ export default function HomeScreen() {
     if (requests) setPending(requests as unknown as PendingRequest[]);
     if (reqVotes && profile) {
       const mine: Record<string, boolean> = {};
+      const picks: Record<string, number | null> = {};
       for (const v of reqVotes as any[]) {
-        if (v.voter_id === profile.id) mine[v.request_id] = v.approve;
+        if (v.voter_id !== profile.id) continue;
+        mine[v.request_id] = v.approve;
+        picks[v.request_id] = v.choice ?? null;
       }
       setMyVotes(mine);
+      setMyChoice(picks);
     }
   }, [profile]);
 
@@ -388,13 +404,16 @@ export default function HomeScreen() {
 
   // Votes are recorded now and tallied by the server at the 48 hour mark,
   // so nothing is awarded here.
-  const voteOnRequest = async (id: string, approve: boolean) => {
+  // choice is the amount picked on a poll, and null on a plain yes/no
+  // or on any decline.
+  const voteOnRequest = async (id: string, approve: boolean, choice?: number) => {
     if (!profile) return;
     const { error } = await supabase
       .from('point_request_votes')
-      .insert({ request_id: id, voter_id: profile.id, approve });
+      .insert({ request_id: id, voter_id: profile.id, approve, choice: choice ?? null });
     if (error) { Alert.alert('Error', 'Could not record that vote.'); return; }
     setMyVotes((m) => ({ ...m, [id]: approve }));
+    setMyChoice((m) => ({ ...m, [id]: choice ?? null }));
   };
 
   const hoursLeft = (createdAt: string) =>
@@ -537,21 +556,54 @@ export default function HomeScreen() {
             <Text style={styles.sectionLabel}>Pending Points</Text>
             <View style={styles.pendingCard}>
               {pending.map((req, i) => {
-                const voted = myVotes[req.id];
-                const isMine = req.requester_id === profile?.id;
+                const voted   = myVotes[req.id];
+                const picked  = myChoice[req.id];
+                const asker   = req.profiles?.username ?? 'Someone';
+                const forWhom = req.beneficiary?.username ?? asker;
+                // Nobody votes on points they would receive. Asking on
+                // someone else's behalf still leaves you a vote.
+                const isForMe = req.beneficiary_id === profile?.id;
+                const options = req.options ?? [];
+                const isPoll  = options.length > 1;
+                // "Kelly · +50" when it is their own, "Kari → Kelly" when
+                // one of them nominated the other.
+                const heading = req.beneficiary_id === req.requester_id
+                  ? `${asker} · ${isPoll ? options.join(' / ') : `+${req.points}`}`
+                  : `${asker} → ${forWhom} · ${isPoll ? options.join(' / ') : `+${req.points}`}`;
                 return (
                   <View key={req.id} style={[styles.pendingRow, i < pending.length - 1 && styles.pendingBorder]}>
                     <View style={{ flex: 1, paddingRight: 10 }}>
-                      <Text style={styles.pendingName} numberOfLines={1}>
-                        {req.profiles?.username ?? 'Someone'} · +{req.points}
-                      </Text>
+                      <Text style={styles.pendingName} numberOfLines={1}>{heading}</Text>
                       <Text style={styles.pendingWhat} numberOfLines={2}>{req.custom_name}</Text>
                       <Text style={styles.pendingClock}>
                         {hoursLeft(req.created_at)}h left
-                        {isMine ? ' · your request' : voted === undefined ? '' : voted ? ' · you approved' : ' · you declined'}
+                        {isForMe
+                          ? ' · for you'
+                          : voted === undefined
+                            ? ''
+                            : voted
+                              ? (picked != null ? ` · you picked ${picked}` : ' · you approved')
+                              : ' · you declined'}
                       </Text>
+                      {/* A poll puts its amounts on their own line: three
+                          buttons and a Decline will not fit beside the text. */}
+                      {isPoll && !isForMe && voted === undefined && (
+                        <View style={styles.pollRow}>
+                          {options.map((o) => (
+                            <TouchableOpacity
+                              key={o}
+                              style={styles.pollBtn}
+                              onPress={() => voteOnRequest(req.id, true, o)}>
+                              <Text style={styles.pollBtnText}>{o}</Text>
+                            </TouchableOpacity>
+                          ))}
+                          <TouchableOpacity style={styles.declineBtn} onPress={() => voteOnRequest(req.id, false)}>
+                            <Text style={styles.declineText}>Decline</Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
                     </View>
-                    {!isMine && voted === undefined && (
+                    {!isPoll && !isForMe && voted === undefined && (
                       <View style={styles.pendingBtns}>
                         <TouchableOpacity style={styles.declineBtn} onPress={() => voteOnRequest(req.id, false)}>
                           <Text style={styles.declineText}>Decline</Text>
@@ -743,6 +795,9 @@ const styles = StyleSheet.create({
   pendingBtns:   { flexDirection: 'row', gap: 8 },
   declineBtn:    { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: C.borderMd },
   declineText:   { fontSize: 13, fontWeight: '600', color: C.inkMid },
+  pollRow:       { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  pollBtn:       { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 999, backgroundColor: C.green },
+  pollBtnText:   { fontSize: 13, fontWeight: '700', color: '#fff' },
   approveBtn:    { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, backgroundColor: C.green },
   approveText:   { fontSize: 13, fontWeight: '600', color: '#fff' },
   eventsEmpty: { backgroundColor: C.card, borderRadius: 18, paddingVertical: 22, alignItems: 'center' },

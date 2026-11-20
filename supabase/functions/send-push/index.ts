@@ -554,7 +554,7 @@ Deno.serve(async (req) => {
   if (job === 'requests') {
     const { data: fresh } = await supabase
       .from('point_requests')
-      .select('id, family_id, points, custom_name, profiles!requester_id(username)')
+      .select('id, family_id, points, options, custom_name, requester_id, beneficiary_id, profiles!requester_id(username), beneficiary:profiles!beneficiary_id(username)')
       .eq('status', 'pending')
       .is('notified_at', null);
 
@@ -562,10 +562,24 @@ Deno.serve(async (req) => {
     for (const r of (fresh ?? []) as any[]) {
       const audience = wants('points').filter((x) => x.familyId === r.family_id);
       if (audience.length > 0) {
-        const who = r.profiles?.username ?? 'Someone';
+        const who  = r.profiles?.username ?? 'Someone';
+        const whom = r.beneficiary?.username ?? who;
+        const self = r.requester_id === r.beneficiary_id;
+        const opts: number[] = r.options ?? [];
+
+        // Four shapes: asking for yourself or nominating someone else,
+        // each either a flat amount or a poll between amounts.
+        const body = opts.length > 0
+          ? (self
+              ? `${whom} puts it to the family: ${joinNames(opts.map(String))} points for ${r.custom_name}? Pick a number — silence hands them the first one after 48 hours.`
+              : `${who} nominates ${whom} for ${r.custom_name}. How much is it worth — ${joinNames(opts.map(String))} points? Pick a number, or decline.`)
+          : (self
+              ? `${whom} petitions the family for ${r.points} points, for ${r.custom_name}. Grant it or deny it — silence counts as a yes after 48 hours.`
+              : `${who} petitions the family to award ${whom} ${r.points} points, for ${r.custom_name}. Grant it or deny it — silence counts as a yes after 48 hours.`);
+
         await notifyEach(audience, () => ({
-          title: '🦉 Owl post',
-          body: `${who} petitions the family for ${r.points} points, for ${r.custom_name}. Grant it or deny it — silence counts as a yes after 48 hours.`,
+          title: opts.length > 0 ? '🗳️ Owl post — the family decides' : '🦉 Owl post',
+          body,
         }), OPEN_REQUEST);
         announced += audience.length;
       }
@@ -574,23 +588,53 @@ Deno.serve(async (req) => {
     }
 
     // Settle anything that has been open 48 hours. No votes counts as a
-    // yes; a tie goes to the requester; more rejections than approvals is
+    // yes; a tie goes to the receiver; more rejections than approvals is
     // the only way a request is declined.
     const cutoff = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
     const { data: stale } = await supabase
       .from('point_requests')
-      .select('id, family_id, requester_id, points, custom_name, notes, photo_url')
+      .select('id, family_id, requester_id, beneficiary_id, points, options, custom_name, notes, photo_url')
       .eq('status', 'pending')
       .lt('created_at', cutoff);
 
     let approved = 0, declined = 0;
     for (const r of (stale ?? []) as any[]) {
       const { data: cast } = await supabase
-        .from('point_request_votes').select('approve').eq('request_id', r.id);
-      const yes = (cast ?? []).filter((v: any) => v.approve).length;
-      const no  = (cast ?? []).length - yes;
+        .from('point_request_votes').select('approve, choice').eq('request_id', r.id);
+      const votes = (cast ?? []) as any[];
+      const no    = votes.filter((v) => !v.approve).length;
+      const opts: number[] = r.options ?? [];
 
-      if (no > yes) {
+      // How many points this ends up being worth, and whether the family
+      // said no. A poll counts each amount separately; declining beats
+      // an amount only if more people declined than picked that amount.
+      let award = r.points;
+      let rejected: boolean;
+
+      if (opts.length > 0) {
+        const tally = new Map<number, number>();
+        for (const o of opts) tally.set(o, 0);
+        for (const v of votes) {
+          if (!v.approve || v.choice == null) continue;
+          if (tally.has(v.choice)) tally.set(v.choice, (tally.get(v.choice) ?? 0) + 1);
+        }
+        const best = Math.max(...tally.values());
+        // Nobody picked anything: the asker's own first suggestion stands.
+        if (best === 0) {
+          rejected = no > 0;
+          award = opts[0];
+        } else {
+          rejected = no > best;
+          // Tied amounts go to the larger, the same way a tied yes/no
+          // goes to the person receiving.
+          award = Math.max(...opts.filter((o) => tally.get(o) === best));
+        }
+      } else {
+        const yes = votes.filter((v) => v.approve).length;
+        rejected = no > yes;
+      }
+
+      if (rejected) {
         await supabase.from('point_requests')
           .update({ status: 'declined', resolved_at: new Date().toISOString() })
           .eq('id', r.id);
@@ -599,17 +643,20 @@ Deno.serve(async (req) => {
       }
 
       const { error } = await supabase.from('point_submissions').insert({
-        user_id: r.requester_id,
+        user_id: r.beneficiary_id ?? r.requester_id,
         family_id: r.family_id,
         category: 'miscellaneous',
         custom_name: r.custom_name,
-        points: r.points,
+        points: award,
         notes: r.notes,
         photo_url: r.photo_url,
       });
       if (error) continue;
+      // points is the settled amount from here on, so the feed and the
+      // Activity Center show what was actually awarded rather than the
+      // asking price.
       await supabase.from('point_requests')
-        .update({ status: 'approved', resolved_at: new Date().toISOString() })
+        .update({ status: 'approved', points: award, resolved_at: new Date().toISOString() })
         .eq('id', r.id);
       approved += 1;
     }

@@ -139,6 +139,13 @@ export default function PointsScreen() {
   const [photoUri,     setPhotoUri]     = useState<string | null>(null);
   const [submitting,   setSubmitting]   = useState(false);
   const [asking,       setAsking]       = useState(false);  // Request, not Add
+  // A request can name someone else and can offer a choice of amounts.
+  // The first amount is always the Points field, so the asker's own
+  // suggestion is what stands if nobody votes.
+  const [askFor,       setAskFor]       = useState<string | null>(null);
+  const [poll,         setPoll]         = useState(false);
+  const [pollTwo,      setPollTwo]      = useState('');
+  const [pollThree,    setPollThree]    = useState('');
 
   useEffect(() => {
     if (!myProfile?.family_id) return;
@@ -276,20 +283,41 @@ export default function PointsScreen() {
   };
 
   // ── Custom submit ─────────────────────────────────────────────
-  const resetForm = () => { setCustomName(''); setCustomPoints(''); setNotes(''); setPhotoUri(null); };
+  const resetForm = () => {
+    setCustomName(''); setCustomPoints(''); setNotes(''); setPhotoUri(null);
+    setAskFor(null); setPoll(false); setPollTwo(''); setPollThree('');
+  };
 
   const handleSubmit = async () => {
     if (!myProfile) return;
     const pts = parseInt(customPoints, 10);
     if (!customName.trim()) { Alert.alert('Missing info', 'Please enter an activity name.'); return; }
     if (isNaN(pts) || pts <= 0) { Alert.alert('Invalid points', 'Enter a valid point amount > 0.'); return; }
+    if (asking && poll) {
+      const extra = [pollTwo, pollThree]
+        .map((v) => parseInt(v, 10))
+        .filter((n) => !isNaN(n) && n > 0 && n !== pts);
+      if (extra.length === 0) {
+        Alert.alert('Add another amount', 'A poll needs at least two different amounts to choose between.');
+        return;
+      }
+    }
     setSubmitting(true);
     let photoUrl: string | null = null;
     if (photoUri) photoUrl = await uploadPhoto(photoUri);
+    // A poll carries its amounts in `options`, the Points field first.
+    // Fewer than two amounts is just an ordinary request.
+    const extras = [pollTwo, pollThree]
+      .map((v) => parseInt(v, 10))
+      .filter((n) => !isNaN(n) && n > 0);
+    const options = poll ? [...new Set([pts, ...extras])] : [];
+
     const { error } = asking
       ? await supabase.from('point_requests').insert({
           family_id: myProfile.family_id, requester_id: myProfile.id,
+          beneficiary_id: askFor ?? myProfile.id,
           custom_name: customName.trim(), points: pts,
+          options: options.length >= 2 ? options.slice(0, 3) : null,
           photo_url: photoUrl, notes: notes.trim() || null,
         })
       : await supabase.from('point_submissions').insert({
@@ -304,9 +332,16 @@ export default function PointsScreen() {
     setSubmitModal(false); resetForm();
     await Promise.all([fetchData(), refreshProfile()]);
     if (wasAsking) {
+      const forName = askFor && askFor !== myProfile.id
+        ? (profiles.find((p) => p.id === askFor)?.username ?? 'them')
+        : null;
+      const amounts = poll ? [pts, ...[pollTwo, pollThree].map((v) => parseInt(v, 10))]
+        .filter((n) => !isNaN(n) && n > 0) : [];
       Alert.alert(
         'Request sent 🙋',
-        `Your family has been asked about ${pts} points for ${added}. It is settled in 48 hours — approved unless more of them decline than approve.`,
+        amounts.length >= 2
+          ? `Your family will pick between ${[...new Set(amounts)].join(', ')} points for ${forName ?? 'you'}, for ${added}. It is settled in 48 hours — with no votes, the first amount stands.`
+          : `Your family has been asked about ${pts} points for ${forName ? `${forName}, for ${added}` : added}. It is settled in 48 hours — approved unless more of them decline than approve.`,
       );
     } else {
       confirmAdded([myProfile.id], pts, added);
@@ -550,18 +585,65 @@ export default function PointsScreen() {
             <TouchableOpacity onPress={() => { setSubmitModal(false); resetForm(); }} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
               <Text style={styles.modalCancel}>Cancel</Text>
             </TouchableOpacity>
-            <Text style={styles.modalTitle}>Submit Points</Text>
+            <Text style={styles.modalTitle}>{asking ? 'Request Points' : 'Submit Points'}</Text>
             <TouchableOpacity onPress={handleSubmit} disabled={submitting}>
               {submitting ? <ActivityIndicator color={C.accent} /> : <Text style={styles.modalDone}>Submit</Text>}
             </TouchableOpacity>
           </View>
           <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.modalScroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+            {asking && (
+              <>
+                <Text style={styles.formLabel}>Who are these points for?</Text>
+                <View style={styles.forRow}>
+                  {profiles.map((p) => {
+                    const on = (askFor ?? myProfile?.id) === p.id;
+                    const me = p.id === myProfile?.id;
+                    return (
+                      <TouchableOpacity
+                        key={p.id}
+                        style={[styles.forChip, on && styles.forChipOn]}
+                        onPress={() => setAskFor(p.id)}
+                        activeOpacity={0.8}>
+                        <Text style={[styles.forChipText, on && styles.forChipTextOn]}>
+                          {me ? 'Me' : p.username}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </>
+            )}
             <Text style={styles.formLabel}>Activity Name</Text>
             <TextInput style={styles.input} value={customName} onChangeText={setCustomName}
               placeholder="e.g. Cooked a family recipe" placeholderTextColor={C.inkDim} />
-            <Text style={styles.formLabel}>Points</Text>
+            <Text style={styles.formLabel}>{asking && poll ? 'Option 1' : 'Points'}</Text>
             <TextInput style={styles.input} value={customPoints} onChangeText={setCustomPoints}
               placeholder="e.g. 25" placeholderTextColor={C.inkDim} keyboardType="number-pad" />
+            {asking && (
+              <>
+                <TouchableOpacity
+                  style={styles.pollToggle}
+                  onPress={() => setPoll((v) => !v)}
+                  activeOpacity={0.7}>
+                  <Text style={styles.pollToggleText}>
+                    {poll ? '\u2212  Just one amount' : '+  Let the family choose the amount'}
+                  </Text>
+                </TouchableOpacity>
+                {poll && (
+                  <>
+                    <Text style={styles.formLabel}>Option 2</Text>
+                    <TextInput style={styles.input} value={pollTwo} onChangeText={setPollTwo}
+                      placeholder="e.g. 50" placeholderTextColor={C.inkDim} keyboardType="number-pad" />
+                    <Text style={styles.formLabel}>Option 3 (optional)</Text>
+                    <TextInput style={styles.input} value={pollThree} onChangeText={setPollThree}
+                      placeholder="e.g. 100" placeholderTextColor={C.inkDim} keyboardType="number-pad" />
+                    <Text style={styles.pollHint}>
+                      The family picks one. With no votes at all, Option 1 stands.
+                    </Text>
+                  </>
+                )}
+              </>
+            )}
             <Text style={styles.formLabel}>Notes (optional)</Text>
             <TextInput style={[styles.input, styles.inputMulti]} value={notes} onChangeText={setNotes}
               placeholder="Add a note..." placeholderTextColor={C.inkDim} multiline numberOfLines={3} />
@@ -619,6 +701,16 @@ const styles = StyleSheet.create({
   quickEmoji:    { fontSize: 22, lineHeight: 26 },
   quickName:     { fontSize: 15, fontWeight: '600', color: C.ink },
   quickPts:      { fontSize: 13, fontWeight: '500', color: C.green },
+
+  // Request: who for, and the poll amounts
+  forRow:        { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4 },
+  forChip:       { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999, backgroundColor: C.bg, borderWidth: 1, borderColor: 'rgba(28,26,22,0.12)' },
+  forChipOn:     { backgroundColor: C.ink, borderColor: C.ink },
+  forChipText:   { fontSize: 14, fontWeight: '600', color: C.ink },
+  forChipTextOn: { color: '#fff' },
+  pollToggle:    { paddingVertical: 10, marginTop: 2 },
+  pollToggleText:{ fontSize: 14, fontWeight: '600', color: C.accent },
+  pollHint:      { fontSize: 12, color: C.inkMid, lineHeight: 17, marginTop: 6 },
 
   // Submit button
   submitWrap:    { paddingHorizontal: 20, paddingTop: 14 },
