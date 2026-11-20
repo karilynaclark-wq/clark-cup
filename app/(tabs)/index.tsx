@@ -48,6 +48,18 @@ type UpcomingEvent = {
   profiles?: { username: string } | null;  // joined
 };
 type FamilyMember = { id: string; username: string; total_points: number };
+
+// Shown once per launch of the app, not once per visit to this tab.
+// Module scope rather than state, so navigating away and back does not
+// bring it round again. A fresh launch -- or an over-the-air reload --
+// reloads this module and clears it.
+let standingShown = false;
+
+function ordinalPlace(n: number) {
+  const suffix = n % 100 >= 11 && n % 100 <= 13 ? 'th'
+    : n % 10 === 1 ? 'st' : n % 10 === 2 ? 'nd' : n % 10 === 3 ? 'rd' : 'th';
+  return `${n}${suffix} place`;
+}
 type PendingRequest = {
   id: string;
   requester_id: string;
@@ -181,6 +193,7 @@ export default function HomeScreen() {
   const [myChoice,         setMyChoice]         = useState<Record<string, number | null>>({});
   const [newEventFor,      setNewEventFor]      = useState<string | null>(null);
   const [addEventModal,    setAddEventModal]    = useState(false);
+  const [standing,         setStanding]         = useState<{ place: number; tied: boolean; points: number; ahead: FamilyMember | null } | null>(null);
   const [newEventDate,     setNewEventDate]     = useState<Date>(new Date());
   const [newEventEnd,      setNewEventEnd]      = useState<Date>(new Date());
   // Tapping a day starts a new range; tapping a later day closes it.
@@ -347,6 +360,22 @@ export default function HomeScreen() {
   }, [profile]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Where you stand, the moment the family's points have loaded.
+  useEffect(() => {
+    if (standingShown || !profile || family.length === 0) return;
+    const sorted = [...family].sort((a, b) => b.total_points - a.total_points);
+    const me = sorted.find((m) => m.id === profile.id);
+    if (!me) return;
+    // Standard competition ranking, so a tie is a shared place rather
+    // than an arbitrary order.
+    const place = sorted.findIndex((m) => m.total_points === me.total_points) + 1;
+    const tied  = sorted.filter((m) => m.total_points === me.total_points).length > 1;
+    // The nearest person actually ahead on points, not merely listed above.
+    const ahead = [...sorted].reverse().find((m) => m.total_points > me.total_points) ?? null;
+    standingShown = true;
+    setStanding({ place, tied, points: me.total_points, ahead });
+  }, [profile, family]);
 
   // Take the read mark once per visit and immediately move it to now. The
   // dots are drawn against the snapshot, so they stay put while you read
@@ -660,6 +689,33 @@ export default function HomeScreen() {
 
       </ScrollView>
 
+      {/* ── Where you stand ─────────────────────────────── */}
+      <Modal visible={!!standing} animationType="fade" transparent onRequestClose={() => setStanding(null)}>
+        <View style={styles.standBackdrop}>
+          <View style={styles.standCard}>
+            <Text style={styles.standCrest}>
+              {standing?.place === 1 ? '🏆' : standing?.place === 2 ? '🥈' : standing?.place === 3 ? '🥉' : '⏳'}
+            </Text>
+            <Text style={styles.standPlace}>
+              {standing ? `${standing.tied ? 'Joint ' : ''}${ordinalPlace(standing.place)}` : ''}
+            </Text>
+            <Text style={styles.standPoints}>
+              {standing ? `${standing.points.toLocaleString()} points` : ''}
+            </Text>
+            <Text style={styles.standLine}>
+              {!standing ? '' : standing.place === 1 && !standing.tied
+                ? 'You hold the Cup. Mind it closely.'
+                : standing.ahead
+                  ? `${standing.ahead.username} is ${(standing.ahead.total_points - standing.points).toLocaleString()} ahead.`
+                  : 'Level at the top — for now.'}
+            </Text>
+            <TouchableOpacity style={styles.standBtn} onPress={() => setStanding(null)} activeOpacity={0.85}>
+              <Text style={styles.standBtnText}>Onward</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* ── Add Event Modal ─────────────────────────────── */}
       <Modal visible={addEventModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setAddEventModal(false)}>
         <KeyboardAvoidingView style={styles.modalContainer} behavior={Platform.OS === 'ios' ? undefined : 'height'}>
@@ -804,6 +860,14 @@ const styles = StyleSheet.create({
   pendingBtns:   { flexDirection: 'row', gap: 8 },
   declineBtn:    { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: C.borderMd },
   declineText:   { fontSize: 13, fontWeight: '600', color: C.inkMid },
+  standBackdrop: { flex: 1, backgroundColor: 'rgba(20,18,15,0.55)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 36 },
+  standCard:     { width: '100%', backgroundColor: C.card, borderRadius: 26, paddingVertical: 30, paddingHorizontal: 26, alignItems: 'center' },
+  standCrest:    { fontSize: 44, marginBottom: 10 },
+  standPlace:    { fontSize: 30, fontWeight: '400', fontStyle: 'italic', letterSpacing: -0.8, color: C.ink, textAlign: 'center' },
+  standPoints:   { fontSize: 15, fontWeight: '600', color: C.green, marginTop: 4 },
+  standLine:     { fontSize: 14, lineHeight: 20, color: C.inkMid, textAlign: 'center', marginTop: 12 },
+  standBtn:      { marginTop: 22, alignSelf: 'stretch', backgroundColor: C.ink, borderRadius: 999, paddingVertical: 15, alignItems: 'center' },
+  standBtnText:  { color: '#fff', fontSize: 15, fontWeight: '700' },
   pollRow:       { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
   pollBtn:       { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 999, backgroundColor: C.green },
   pollBtnText:   { fontSize: 13, fontWeight: '700', color: '#fff' },
