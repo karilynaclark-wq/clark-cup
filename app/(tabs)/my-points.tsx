@@ -144,8 +144,9 @@ export default function PointsScreen() {
   // suggestion is what stands if nobody votes.
   const [askFor,       setAskFor]       = useState<string | null>(null);
   const [poll,         setPoll]         = useState(false);
-  const [pollTwo,      setPollTwo]      = useState('');
-  const [pollThree,    setPollThree]    = useState('');
+  // The extra amounts only. The Points field is always the first option,
+  // so this holds at most four.
+  const [pollOpts,     setPollOpts]     = useState<string[]>([]);
 
   useEffect(() => {
     if (!myProfile?.family_id) return;
@@ -285,7 +286,7 @@ export default function PointsScreen() {
   // ── Custom submit ─────────────────────────────────────────────
   const resetForm = () => {
     setCustomName(''); setCustomPoints(''); setNotes(''); setPhotoUri(null);
-    setAskFor(null); setPoll(false); setPollTwo(''); setPollThree('');
+    setAskFor(null); setPoll(false); setPollOpts([]);
   };
 
   const handleSubmit = async () => {
@@ -294,7 +295,7 @@ export default function PointsScreen() {
     if (!customName.trim()) { Alert.alert('Missing info', 'Please enter an activity name.'); return; }
     if (isNaN(pts) || pts <= 0) { Alert.alert('Invalid points', 'Enter a valid point amount > 0.'); return; }
     if (asking && poll) {
-      const extra = [pollTwo, pollThree]
+      const extra = pollOpts
         .map((v) => parseInt(v, 10))
         .filter((n) => !isNaN(n) && n > 0 && n !== pts);
       if (extra.length === 0) {
@@ -307,7 +308,7 @@ export default function PointsScreen() {
     if (photoUri) photoUrl = await uploadPhoto(photoUri);
     // A poll carries its amounts in `options`, the Points field first.
     // Fewer than two amounts is just an ordinary request.
-    const extras = [pollTwo, pollThree]
+    const extras = pollOpts
       .map((v) => parseInt(v, 10))
       .filter((n) => !isNaN(n) && n > 0);
     const options = poll ? [...new Set([pts, ...extras])] : [];
@@ -317,7 +318,7 @@ export default function PointsScreen() {
           family_id: myProfile.family_id, requester_id: myProfile.id,
           beneficiary_id: askFor ?? myProfile.id,
           custom_name: customName.trim(), points: pts,
-          options: options.length >= 2 ? options.slice(0, 3) : null,
+          options: options.length >= 2 ? options.slice(0, 5) : null,
           photo_url: photoUrl, notes: notes.trim() || null,
         })
       : await supabase.from('point_submissions').insert({
@@ -335,7 +336,7 @@ export default function PointsScreen() {
       const forName = askFor && askFor !== myProfile.id
         ? (profiles.find((p) => p.id === askFor)?.username ?? 'them')
         : null;
-      const amounts = poll ? [pts, ...[pollTwo, pollThree].map((v) => parseInt(v, 10))]
+      const amounts = poll ? [pts, ...pollOpts.map((v) => parseInt(v, 10))]
         .filter((n) => !isNaN(n) && n > 0) : [];
       Alert.alert(
         'Request sent 🙋',
@@ -616,32 +617,54 @@ export default function PointsScreen() {
             <Text style={styles.formLabel}>Activity Name</Text>
             <TextInput style={styles.input} value={customName} onChangeText={setCustomName}
               placeholder="e.g. Cooked a family recipe" placeholderTextColor={C.inkDim} />
-            <Text style={styles.formLabel}>{asking && poll ? 'Option 1' : 'Points'}</Text>
+            <Text style={styles.formLabel}>Points</Text>
             <TextInput style={styles.input} value={customPoints} onChangeText={setCustomPoints}
               placeholder="e.g. 25" placeholderTextColor={C.inkDim} keyboardType="number-pad" />
-            {asking && (
+            {/* The Points field above is the first option on a poll, so
+                turning one on only ever adds the alternatives. */}
+            {asking && !poll && (
+              <TouchableOpacity
+                style={styles.pollToggle}
+                onPress={() => { setPoll(true); setPollOpts(['']); }}
+                activeOpacity={0.7}>
+                <Text style={styles.pollToggleText}>+  Create a poll</Text>
+              </TouchableOpacity>
+            )}
+            {asking && poll && (
               <>
-                <TouchableOpacity
-                  style={styles.pollToggle}
-                  onPress={() => setPoll((v) => !v)}
-                  activeOpacity={0.7}>
-                  <Text style={styles.pollToggleText}>
-                    {poll ? '\u2212  Just one amount' : '+  Let the family choose the amount'}
-                  </Text>
-                </TouchableOpacity>
-                {poll && (
-                  <>
-                    <Text style={styles.formLabel}>Option 2</Text>
-                    <TextInput style={styles.input} value={pollTwo} onChangeText={setPollTwo}
-                      placeholder="e.g. 50" placeholderTextColor={C.inkDim} keyboardType="number-pad" />
-                    <Text style={styles.formLabel}>Option 3 (optional)</Text>
-                    <TextInput style={styles.input} value={pollThree} onChangeText={setPollThree}
-                      placeholder="e.g. 100" placeholderTextColor={C.inkDim} keyboardType="number-pad" />
-                    <Text style={styles.pollHint}>
-                      The family picks one. With no votes at all, Option 1 stands.
-                    </Text>
-                  </>
+                {pollOpts.map((v, i) => (
+                  <View key={i} style={styles.pollOptRow}>
+                    <TextInput
+                      style={[styles.input, styles.pollOptInput]}
+                      value={v}
+                      onChangeText={(t) => setPollOpts((o) => o.map((x, j) => (j === i ? t : x)))}
+                      placeholder="Another amount"
+                      placeholderTextColor={C.inkDim}
+                      keyboardType="number-pad" />
+                    <TouchableOpacity
+                      onPress={() => setPollOpts((o) => {
+                        const next = o.filter((_, j) => j !== i);
+                        // Removing the last alternative is the way back
+                        // out of poll mode -- no second button needed.
+                        if (next.length === 0) setPoll(false);
+                        return next;
+                      })}
+                      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+                      <Text style={styles.pollOptRemove}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+                {pollOpts.length < 4 && (
+                  <TouchableOpacity
+                    style={styles.pollToggle}
+                    onPress={() => setPollOpts((o) => [...o, ''])}
+                    activeOpacity={0.7}>
+                    <Text style={styles.pollToggleText}>+  Add another option</Text>
+                  </TouchableOpacity>
                 )}
+                <Text style={styles.pollHint}>
+                  The family picks one amount. If nobody votes, the Points amount stands.
+                </Text>
               </>
             )}
             <Text style={styles.formLabel}>Notes (optional)</Text>
@@ -711,6 +734,9 @@ const styles = StyleSheet.create({
   pollToggle:    { paddingVertical: 10, marginTop: 2 },
   pollToggleText:{ fontSize: 14, fontWeight: '600', color: C.accent },
   pollHint:      { fontSize: 12, color: C.inkMid, lineHeight: 17, marginTop: 6 },
+  pollOptRow:    { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
+  pollOptInput:  { flex: 1 },
+  pollOptRemove: { fontSize: 15, color: C.inkDim, paddingHorizontal: 2 },
 
   // Submit button
   submitWrap:    { paddingHorizontal: 20, paddingTop: 14 },

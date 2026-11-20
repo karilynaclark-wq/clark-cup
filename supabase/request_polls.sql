@@ -5,7 +5,7 @@
 --
 --   1. A request names who the points are FOR, which need not be the
 --      person asking. Nominating someone else is half the fun.
---   2. A request may offer up to three amounts instead of one, and the
+--   2. A request may offer up to five amounts instead of one, and the
 --      family picks between them.
 --
 -- Settling a poll:
@@ -29,11 +29,11 @@ ALTER TABLE point_requests ALTER COLUMN beneficiary_id SET NOT NULL;
 ALTER TABLE point_requests
   ADD COLUMN IF NOT EXISTS options INTEGER[];
 
--- At most three, all positive. A poll of one is just a request.
+-- At most five, all positive. A poll of one is just a request.
 ALTER TABLE point_requests DROP CONSTRAINT IF EXISTS options_sane;
 ALTER TABLE point_requests ADD CONSTRAINT options_sane CHECK (
   options IS NULL
-  OR (array_length(options, 1) BETWEEN 2 AND 3
+  OR (array_length(options, 1) BETWEEN 2 AND 5
       AND 0 < ALL (options))
 );
 
