@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert,
   ActivityIndicator, RefreshControl, Dimensions, TextInput, Modal,
@@ -60,6 +60,11 @@ export default function DadsStuffScreen() {
   const [editing, setEditing]   = useState<string | null>(null);
   const [draft, setDraft]       = useState('');
   const [viewing, setViewing]   = useState<Item | null>(null);
+  // `uploading` is only set once the picker returns, so it cannot guard
+  // the gap between tapping Add and choosing files. Two taps in that gap
+  // opened two pickers and uploaded everything twice.
+  const busy = useRef(false);
+  const seenAssets = useRef<Set<string>>(new Set());
 
   const fetchData = useCallback(async () => {
     const [{ data: i }, { data: v }, { data: p }] = await Promise.all([
@@ -95,6 +100,16 @@ export default function DadsStuffScreen() {
   };
 
   const pickFrom = async (source: 'camera' | 'library') => {
+    if (busy.current) return;
+    busy.current = true;
+    try {
+      await runPick(source);
+    } finally {
+      busy.current = false;
+    }
+  };
+
+  const runPick = async (source: 'camera' | 'library') => {
     if (source === 'camera') {
       const perm = await ImagePicker.requestCameraPermissionsAsync();
       if (!perm.granted) { Alert.alert('Camera access needed', 'Allow camera access to take a photo.'); return; }
@@ -120,6 +135,11 @@ export default function DadsStuffScreen() {
       setProgress(`Adding ${done} of ${res.assets.length}…`);
       try {
         const isVideo = asset.type === 'video';
+        // Picking the same photo again in a later batch is the other way
+        // a duplicate arrives. The library's own asset id is stable, so
+        // it tells us we already have this one.
+        if (asset.assetId && seenAssets.current.has(asset.assetId)) continue;
+        if (asset.assetId) seenAssets.current.add(asset.assetId);
         const ext = (asset.uri.split('.').pop() || (isVideo ? 'mov' : 'jpg')).toLowerCase();
         const bytes = await (await fetch(asset.uri)).arrayBuffer();
         const path = `dads-stuff/${profile.id}-${Date.now()}-${done}.${ext}`;
