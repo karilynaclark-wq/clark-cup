@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert,
-  ActivityIndicator, RefreshControl, Dimensions, TextInput,
+  ActivityIndicator, RefreshControl, Dimensions, TextInput, Modal,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -45,6 +45,10 @@ type Vote = { item_id: string; profile_id: string; choice: Choice };
 export default function DadsStuffScreen() {
   const router = useRouter();
   const { profile } = useAuth();
+  // Read out here: a Modal is its own native hierarchy with no
+  // SafeAreaProvider above it, so insets measured inside come back zero
+  // and the close button ends up under the status bar, which eats taps.
+  const insets = useSafeAreaInsets();
   const [items, setItems]       = useState<Item[]>([]);
   const [votes, setVotes]       = useState<Vote[]>([]);
   const [people, setPeople]     = useState<Record<string, string>>({});
@@ -55,6 +59,7 @@ export default function DadsStuffScreen() {
   const [filter, setFilter]     = useState<'all' | Choice | 'undecided'>('all');
   const [editing, setEditing]   = useState<string | null>(null);
   const [draft, setDraft]       = useState('');
+  const [viewing, setViewing]   = useState<Item | null>(null);
 
   const fetchData = useCallback(async () => {
     const [{ data: i }, { data: v }, { data: p }] = await Promise.all([
@@ -245,7 +250,11 @@ export default function DadsStuffScreen() {
                   <Text style={styles.videoLabel}>Tap to play</Text>
                 </TouchableOpacity>
               ) : (
-                <Image source={{ uri: item.media_url }} style={styles.photo} resizeMode="cover" />
+                <TouchableOpacity activeOpacity={0.9} onPress={() => setViewing(item)}>
+                  {/* contain, not cover: a tall vase or a wide painting
+                      should not lose its ends to a fixed-ratio crop. */}
+                  <Image source={{ uri: item.media_url }} style={styles.photo} resizeMode="contain" />
+                </TouchableOpacity>
               )}
 
               {editing === item.id ? (
@@ -304,6 +313,22 @@ export default function DadsStuffScreen() {
         })}
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Full screen, the whole picture, nothing cropped. */}
+      <Modal visible={!!viewing} animationType="fade" transparent onRequestClose={() => setViewing(null)}>
+        <View style={[styles.viewer, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+          <TouchableOpacity
+            style={styles.viewerClose}
+            onPress={() => setViewing(null)}
+            hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}>
+            <Text style={styles.viewerCloseText}>✕</Text>
+          </TouchableOpacity>
+          {viewing && (
+            <Image source={{ uri: viewing.media_url }} style={styles.viewerImage} resizeMode="contain" />
+          )}
+          {!!viewing?.caption && <Text style={styles.viewerCaption}>{viewing.caption}</Text>}
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -325,7 +350,7 @@ const styles = StyleSheet.create({
   addText:    { color: '#fff', fontSize: 15, fontWeight: '700' },
   empty:      { fontSize: 14, color: C.inkMid, textAlign: 'center', marginTop: 30 },
   card:       { backgroundColor: C.card, borderRadius: 20, overflow: 'hidden', marginBottom: 16, paddingBottom: 12 },
-  photo:      { width: '100%', height: TILE * 1.4, backgroundColor: C.border },
+  photo:      { width: '100%', height: SCREEN_W * 0.95, backgroundColor: '#efe9e0' },
   videoTile:  { width: '100%', height: TILE * 1.4, backgroundColor: '#1c1a16', alignItems: 'center', justifyContent: 'center', gap: 6 },
   videoPlay:  { fontSize: 40, color: '#fff' },
   videoLabel: { fontSize: 13, color: 'rgba(255,255,255,0.7)', fontWeight: '600' },
@@ -339,6 +364,11 @@ const styles = StyleSheet.create({
   choiceBtnOn:{ backgroundColor: C.green, borderColor: C.green },
   choiceText: { fontSize: 12, fontWeight: '700', color: C.ink },
   choiceTextOn:{ color: '#fff' },
+  viewer:      { flex: 1, backgroundColor: '#0d0c0a' },
+  viewerClose: { alignSelf: 'flex-end', paddingHorizontal: 22, paddingVertical: 14 },
+  viewerCloseText: { fontSize: 24, color: '#fff', fontWeight: '300' },
+  viewerImage: { flex: 1, width: '100%' },
+  viewerCaption: { color: 'rgba(255,255,255,0.8)', fontSize: 15, textAlign: 'center', paddingHorizontal: 24, paddingVertical: 18 },
   tallies:    { paddingHorizontal: 16, paddingTop: 10, gap: 2 },
   tally:      { fontSize: 12, color: C.inkMid, lineHeight: 17 },
   tallyLabel: { fontWeight: '700', color: C.ink },
