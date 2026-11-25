@@ -47,11 +47,11 @@ type Item = {
   id: string;
   media_url: string;
   kind: 'image' | 'video';
-  caption: string | null;
   section: Section;
   created_at: string;
 };
 type Vote = { item_id: string; profile_id: string; choice: Choice };
+type Comment = { id: string; item_id: string; profile_id: string; body: string; created_at: string };
 
 export default function DadsStuffScreen() {
   const router = useRouter();
@@ -70,7 +70,8 @@ export default function DadsStuffScreen() {
   const [filter, setFilter]     = useState<'all' | Choice | 'undecided'>('all');
   const [section, setSection]   = useState<'all' | Section>('all');
   const [filing, setFiling]     = useState<string | null>(null);
-  const [editing, setEditing]   = useState<string | null>(null);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [asking, setAsking]     = useState<string | null>(null);
   const [draft, setDraft]       = useState('');
   const [viewing, setViewing]   = useState<Item | null>(null);
   // `uploading` is only set once the picker returns, so it cannot guard
@@ -80,14 +81,17 @@ export default function DadsStuffScreen() {
   const seenAssets = useRef<Set<string>>(new Set());
 
   const fetchData = useCallback(async () => {
-    const [{ data: i }, { data: v }, { data: p }] = await Promise.all([
-      supabase.from('dads_stuff_items').select('id, media_url, kind, caption, section, created_at')
+    const [{ data: i }, { data: v }, { data: p }, { data: c }] = await Promise.all([
+      supabase.from('dads_stuff_items').select('id, media_url, kind, section, created_at')
         .order('created_at', { ascending: false }),
       supabase.from('dads_stuff_votes').select('item_id, profile_id, choice'),
       supabase.from('profiles').select('id, username'),
+      supabase.from('dads_stuff_comments').select('id, item_id, profile_id, body, created_at')
+        .order('created_at', { ascending: true }),
     ]);
     setItems((i ?? []) as Item[]);
     setVotes((v ?? []) as Vote[]);
+    setComments((c ?? []) as Comment[]);
     const names: Record<string, string> = {};
     for (const row of (p ?? []) as any[]) names[row.id] = row.username;
     setPeople(names);
@@ -209,11 +213,27 @@ export default function DadsStuffScreen() {
     if (error) { Alert.alert('Error', 'Could not move that.'); fetchData(); }
   };
 
-  const saveCaption = async (itemId: string) => {
-    const text = draft.trim();
-    setEditing(null);
-    setItems((is) => is.map((i) => (i.id === itemId ? { ...i, caption: text || null } : i)));
-    await supabase.from('dads_stuff_items').update({ caption: text || null }).eq('id', itemId);
+  const postComment = async (itemId: string) => {
+    const body = draft.trim();
+    if (!body || !profile) { setAsking(null); setDraft(''); return; }
+    setAsking(null);
+    setDraft('');
+    const { data, error } = await supabase.from('dads_stuff_comments')
+      .insert({ item_id: itemId, profile_id: profile.id, body })
+      .select('id, item_id, profile_id, body, created_at')
+      .single();
+    if (error) { Alert.alert('Error', 'Could not post that.'); return; }
+    setComments((cs) => [...cs, data as Comment]);
+  };
+
+  const removeComment = (c: Comment) => {
+    Alert.alert('Delete this?', undefined, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        setComments((cs) => cs.filter((x) => x.id !== c.id));
+        await supabase.from('dads_stuff_comments').delete().eq('id', c.id);
+      } },
+    ]);
   };
 
   const votesFor = (id: string) => votes.filter((v) => v.item_id === id);
@@ -349,29 +369,6 @@ export default function DadsStuffScreen() {
                 </TouchableOpacity>
               )}
 
-              {editing === item.id ? (
-                <View style={styles.capEdit}>
-                  <TextInput
-                    style={styles.capInput}
-                    value={draft}
-                    onChangeText={setDraft}
-                    placeholder="What is it?"
-                    placeholderTextColor={C.inkDim}
-                    autoFocus
-                    onSubmitEditing={() => saveCaption(item.id)}
-                    returnKeyType="done" />
-                  <TouchableOpacity onPress={() => saveCaption(item.id)}>
-                    <Text style={styles.capSave}>Save</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <TouchableOpacity onPress={() => { setEditing(item.id); setDraft(item.caption ?? ''); }}>
-                  <Text style={[styles.caption, !item.caption && styles.captionEmpty]}>
-                    {item.caption || 'Add a label'}
-                  </Text>
-                </TouchableOpacity>
-              )}
-
               <View style={styles.choiceRow}>
                 {CHOICES.map((c) => (
                   <TouchableOpacity
@@ -383,6 +380,49 @@ export default function DadsStuffScreen() {
                   </TouchableOpacity>
                 ))}
               </View>
+
+              {/* Questions anyone can ask, and anyone can answer. */}
+              {(() => {
+                const thread = comments.filter((c) => c.item_id === item.id);
+                return (
+                  <View style={styles.thread}>
+                    {thread.map((c) => (
+                      <TouchableOpacity
+                        key={c.id}
+                        activeOpacity={c.profile_id === profile?.id ? 0.6 : 1}
+                        onLongPress={() => { if (c.profile_id === profile?.id) removeComment(c); }}>
+                        <Text style={styles.comment}>
+                          <Text style={styles.commentWho}>{people[c.profile_id] ?? '—'}  </Text>
+                          {c.body}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                    {asking === item.id ? (
+                      <View style={styles.capEdit}>
+                        <TextInput
+                          style={styles.capInput}
+                          value={draft}
+                          onChangeText={setDraft}
+                          placeholder="Ask a question…"
+                          placeholderTextColor={C.inkDim}
+                          autoFocus
+                          multiline
+                          onSubmitEditing={() => postComment(item.id)}
+                          returnKeyType="send" />
+                        <TouchableOpacity onPress={() => postComment(item.id)}>
+                          <Text style={styles.capSave}>Post</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <TouchableOpacity onPress={() => { setAsking(item.id); setDraft(''); }}>
+                        <Text style={styles.askLink}>
+                          {thread.length === 0 ? 'Ask a question' : 'Add a question'}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })()}
 
               {/* Who said what. The whole reason this screen exists. */}
               {cast.length > 0 && (
@@ -418,7 +458,6 @@ export default function DadsStuffScreen() {
           {viewing && (
             <Image source={{ uri: viewing.media_url }} style={styles.viewerImage} resizeMode="contain" />
           )}
-          {!!viewing?.caption && <Text style={styles.viewerCaption}>{viewing.caption}</Text>}
         </View>
       </Modal>
     </SafeAreaView>
@@ -453,8 +492,10 @@ const styles = StyleSheet.create({
   fileChipOn:  { backgroundColor: C.green, borderColor: C.green },
   fileChipText:{ fontSize: 12, fontWeight: '700', color: C.ink },
   fileChipTextOn:{ color: '#fff' },
-  caption:    { fontSize: 15, fontWeight: '600', color: C.ink, paddingHorizontal: 16, paddingTop: 10 },
-  captionEmpty:{ color: C.inkDim, fontWeight: '500' },
+  thread:     { paddingHorizontal: 16, paddingTop: 10, gap: 5 },
+  comment:    { fontSize: 13, lineHeight: 19, color: C.ink },
+  commentWho: { fontWeight: '700' },
+  askLink:    { fontSize: 13, fontWeight: '700', color: C.accent, paddingTop: 2 },
   capEdit:    { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingTop: 12 },
   capInput:   { flex: 1, backgroundColor: C.bg, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, fontSize: 15, color: C.ink },
   capSave:    { fontSize: 14, fontWeight: '700', color: C.accent },
@@ -467,7 +508,6 @@ const styles = StyleSheet.create({
   viewerClose: { alignSelf: 'flex-end', paddingHorizontal: 22, paddingVertical: 14 },
   viewerCloseText: { fontSize: 24, color: '#fff', fontWeight: '300' },
   viewerImage: { flex: 1, width: '100%' },
-  viewerCaption: { color: 'rgba(255,255,255,0.8)', fontSize: 15, textAlign: 'center', paddingHorizontal: 24, paddingVertical: 18 },
   tallies:    { paddingHorizontal: 16, paddingTop: 10, gap: 2 },
   tally:      { fontSize: 12, color: C.inkMid, lineHeight: 17 },
   tallyLabel: { fontWeight: '700', color: C.ink },

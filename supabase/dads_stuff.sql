@@ -72,7 +72,7 @@ CREATE POLICY "Add an item"
     AND created_by IN (SELECT id FROM profiles WHERE auth_user_id = auth.uid())
   );
 
--- Filing an item, and labelling it. Anyone in the family, not only
+-- Filing an item. Anyone in the family, not only
 -- whoever added it: sorting a houseful is a job you share.
 DROP POLICY IF EXISTS "File an item" ON dads_stuff_items;
 CREATE POLICY "File an item"
@@ -106,8 +106,42 @@ CREATE POLICY "Take back your answer"
 -- On for the Clarks only.
 UPDATE families SET dads_stuff = TRUE WHERE name = 'The Clarks';
 
+-- Questions anyone can ask on an item, and anyone can answer. Your own
+-- words you may take back; the photos themselves stay.
+CREATE TABLE IF NOT EXISTS dads_stuff_comments (
+  id         UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  item_id    UUID NOT NULL REFERENCES dads_stuff_items(id) ON DELETE CASCADE,
+  profile_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  body       TEXT NOT NULL CHECK (length(btrim(body)) > 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS dads_stuff_comments_item
+  ON dads_stuff_comments (item_id, created_at);
+
+ALTER TABLE dads_stuff_comments ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Comments in your family are viewable" ON dads_stuff_comments;
+DROP POLICY IF EXISTS "Ask a question"                       ON dads_stuff_comments;
+DROP POLICY IF EXISTS "Take back your own words"             ON dads_stuff_comments;
+
+CREATE POLICY "Comments in your family are viewable"
+  ON dads_stuff_comments FOR SELECT USING (
+    item_id IN (SELECT id FROM dads_stuff_items WHERE family_id = current_family_id())
+  );
+
+CREATE POLICY "Ask a question"
+  ON dads_stuff_comments FOR INSERT WITH CHECK (
+    profile_id IN (SELECT id FROM profiles WHERE auth_user_id = auth.uid())
+    AND item_id IN (SELECT id FROM dads_stuff_items WHERE family_id = current_family_id())
+  );
+
+CREATE POLICY "Take back your own words"
+  ON dads_stuff_comments FOR DELETE USING (
+    profile_id IN (SELECT id FROM profiles WHERE auth_user_id = auth.uid())
+  );
+
 -- Check:
--- SELECT i.caption, v.choice, p.username
+-- SELECT i.section, v.choice, p.username
 --   FROM dads_stuff_items i
 --   LEFT JOIN dads_stuff_votes v ON v.item_id = i.id
 --   LEFT JOIN profiles p ON p.id = v.profile_id;
