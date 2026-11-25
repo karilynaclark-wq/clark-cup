@@ -28,7 +28,7 @@ const TILE = (SCREEN_W - 20 * 2 - 10) / 2;
 
 type Choice = 'claim' | 'save' | 'pass';
 const CHOICES: { key: Choice; label: string; short: string }[] = [
-  { key: 'claim', label: 'Claim',        short: 'claimed'  },
+  { key: 'claim', label: 'I want it',     short: 'wants it' },
   { key: 'save',  label: "Save at Mom's", short: "save at Mom's" },
   { key: 'pass',  label: "Don't want",   short: 'passed'   },
 ];
@@ -280,7 +280,7 @@ export default function DadsStuffScreen() {
 
   const FILTERS: { key: typeof filter; label: string }[] = [
     { key: 'all',       label: 'All' },
-    { key: 'claim',     label: 'My claims' },
+    { key: 'claim',     label: 'I want it' },
     { key: 'save',      label: "Save at Mom's" },
     { key: 'pass',      label: "Don't want" },
     { key: 'undecided', label: 'Undecided' },
