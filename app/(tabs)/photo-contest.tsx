@@ -16,6 +16,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 
@@ -43,6 +44,7 @@ type Entry = {
   profile_id: string;
   week_start: string;
   photo_url: string;
+  kind: 'image' | 'video';
   caption: string | null;
   profiles?: { username: string } | null;
 };
@@ -93,7 +95,7 @@ export default function PhotoContestScreen() {
     const [{ data: e }, { data: v }] = await Promise.all([
       supabase
         .from('photo_entries')
-        .select('id, profile_id, week_start, photo_url, caption, profiles(username)')
+        .select('id, profile_id, week_start, photo_url, kind, caption, profiles(username)')
         .eq('hidden', false)
         .order('week_start', { ascending: false })
         .order('created_at', { ascending: true }),
@@ -115,7 +117,7 @@ export default function PhotoContestScreen() {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') { Alert.alert('Permission needed', 'Please allow photo access.'); return; }
     const picked = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images', 'videos'],
       // No forced crop: a photo keeps its own shape, so a portrait shot
       // fills the screen in the viewer. The feed card stays square and
       // centre-crops it, so the grid is unchanged.
@@ -123,11 +125,25 @@ export default function PhotoContestScreen() {
     });
     if (picked.canceled) return;
 
+    const asset   = picked.assets[0];
+    const isVideo = asset.type === 'video';
+
+    // A long video is the one upload that reliably fails on a phone
+    // connection, so stop it here with something readable rather than
+    // letting it time out halfway up.
+    if (isVideo && (asset.duration ?? 0) > 60_000) {
+      Alert.alert(
+        'That video is a bit long',
+        'Videos need to be under a minute. Trim it in Photos and try again.',
+      );
+      return;
+    }
+
     // Optional one-liner. Cancel skips the photo entirely; Skip posts it bare.
     const caption = await new Promise<string | null>((resolve) => {
       Alert.prompt(
         'Add a description?',
-        `Optional — a few words about this photo (up to ${CAPTION_MAX} characters).`,
+        `Optional — a few words about this ${isVideo ? 'video' : 'photo'} (up to ${CAPTION_MAX} characters).`,
         [
           { text: 'Cancel', style: 'cancel', onPress: () => resolve(null) },
           { text: 'Skip', onPress: () => resolve('') },
@@ -141,12 +157,14 @@ export default function PhotoContestScreen() {
 
     setUploading(true);
     try {
-      const uri = picked.assets[0].uri;
-      const ext = uri.split('.').pop() ?? 'jpg';
+      const ext = (asset.uri.split('.').pop() ?? (isVideo ? 'mov' : 'jpg')).toLowerCase();
       const path = `contest/${profile!.id}-${thisWeek}.${ext}`;
-      const bytes = await (await fetch(uri)).arrayBuffer();
+      const bytes = await (await fetch(asset.uri)).arrayBuffer();
+      const contentType = isVideo
+        ? `video/${ext === 'mov' ? 'quicktime' : ext}`
+        : `image/${ext === 'jpg' ? 'jpeg' : ext}`;
       const { error: upErr } = await supabase.storage
-        .from('photos').upload(path, bytes, { contentType: `image/${ext}`, upsert: true });
+        .from('photos').upload(path, bytes, { contentType, upsert: true });
       if (upErr) throw upErr;
       const url = supabase.storage.from('photos').getPublicUrl(path).data.publicUrl;
 
@@ -155,6 +173,7 @@ export default function PhotoContestScreen() {
         profile_id: profile!.id,
         week_start: thisWeek,
         photo_url: url,
+        kind: isVideo ? 'video' : 'image',
         caption: caption || null,
       });
       if (error) throw error;
@@ -164,8 +183,8 @@ export default function PhotoContestScreen() {
       Alert.alert(
         already ? 'Already entered' : 'Could not upload',
         already
-          ? 'You have already submitted a photo this week.'
-          : 'Something went wrong uploading that photo.',
+          ? 'You have already submitted an entry this week.'
+          : `Something went wrong uploading that ${isVideo ? 'video' : 'photo'}.`,
       );
     } finally {
       setUploading(false);
@@ -316,7 +335,7 @@ export default function PhotoContestScreen() {
                         ? <ActivityIndicator color={C.ink} />
                         : <Text style={styles.addPlus}>+</Text>}
                     </View>
-                    <Text style={styles.addLabel}>{uploading ? 'Adding…' : 'Add your photo'}</Text>
+                    <Text style={styles.addLabel}>{uploading ? 'Adding…' : 'Add a photo or video'}</Text>
                   </TouchableOpacity>
                 )}
 
@@ -330,7 +349,14 @@ export default function PhotoContestScreen() {
                         activeOpacity={0.9}
                         onPress={() => openPhoto(entry)}
                         accessibilityLabel={`Options for ${entry.profiles?.username ?? 'this'} photo`}>
-                        <Image source={{ uri: entry.photo_url }} style={styles.photo} resizeMode="cover" />
+                        {entry.kind === 'video' ? (
+                          <View style={[styles.photo, styles.videoTile]}>
+                            <Text style={styles.videoPlay}>▶︎</Text>
+                            <Text style={styles.videoLabel}>Video</Text>
+                          </View>
+                        ) : (
+                          <Image source={{ uri: entry.photo_url }} style={styles.photo} resizeMode="cover" />
+                        )}
                       </TouchableOpacity>
                       <View style={styles.cardFooter}>
                         <View style={{ flex: 1 }}>
@@ -365,7 +391,7 @@ export default function PhotoContestScreen() {
                 })}
 
                 {weekEntries.length === 0 && !open && (
-                  <View style={styles.emptyCard}><Text style={styles.emptyText}>No photos that week.</Text></View>
+                  <View style={styles.emptyCard}><Text style={styles.emptyText}>Nothing that week.</Text></View>
                 )}
               </ScrollView>
             </View>
@@ -395,7 +421,18 @@ export default function PhotoContestScreen() {
                   </TouchableOpacity>
                 </View>
 
-                <Image source={{ uri: viewing.photo_url }} style={styles.viewerPhoto} resizeMode="contain" />
+                {viewing.kind === 'video' ? (
+                  <TouchableOpacity
+                    style={[styles.viewerPhoto, styles.videoTile]}
+                    activeOpacity={0.8}
+                    onPress={() => WebBrowser.openBrowserAsync(viewing.photo_url)}
+                    accessibilityLabel="Play this video">
+                    <Text style={styles.viewerPlay}>▶︎</Text>
+                    <Text style={styles.videoLabel}>Tap to play</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <Image source={{ uri: viewing.photo_url }} style={styles.viewerPhoto} resizeMode="contain" />
+                )}
 
                 <View style={styles.viewerFooter}>
                   <View style={{ flex: 1, paddingRight: 14 }}>
@@ -473,6 +510,10 @@ const styles = StyleSheet.create({
     width: CARD_W, borderRadius: 18, overflow: 'hidden', backgroundColor: C.card,
   },
   photo:      { width: '100%', aspectRatio: 1, backgroundColor: '#e8e2d8' },
+  videoTile:  { backgroundColor: '#1c1a16', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  videoPlay:  { fontSize: 44, color: '#fff' },
+  viewerPlay: { fontSize: 60, color: '#fff' },
+  videoLabel: { fontSize: 13, color: 'rgba(255,255,255,0.7)', fontWeight: '600' },
   cardFooter: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 8 },
   cardName:   { fontSize: 15, fontWeight: '700', color: C.ink },
   cardCaption:{ fontSize: 13, color: C.ink, marginTop: 2 },
