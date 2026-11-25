@@ -20,7 +20,8 @@
         "NSPhotoLibraryUsageDescription": "Family Cup uses your photo library so you can enter the weekly photo contest, attach photos to point submissions, and set your profile picture.",
         "NSCameraUsageDescription": "Family Cup uses your camera to take photos for submissions.",
         "NSUserNotificationsUsageDescription": "Family Cup sends weekly reminders to help you earn points.",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSMicrophoneUsageDescription": "Family Cup uses your microphone when you record a video to add to the family."
       }
     },
     "web": {
@@ -40,7 +41,9 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Family Cup uses your photo library so you can enter the weekly photo contest, attach photos to point submissions, and set your profile picture."
+          "photosPermission": "Family Cup uses your photo library so you can enter the weekly photo contest, attach photos to point submissions, and set your profile picture.",
+          "cameraPermission": "Family Cup uses your camera to take photos and videos to add to the family.",
+          "microphonePermission": "Family Cup uses your microphone when you record a video to add to the family."
         }
       ],
       "expo-web-browser"

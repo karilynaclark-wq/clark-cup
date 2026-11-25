@@ -76,15 +76,36 @@ export default function DadsStuffScreen() {
   // ── Adding ──────────────────────────────────────────────────────
   // Many at once: going through a houseful of things one photo at a
   // time would be unusable.
-  const add = async () => {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) { Alert.alert('Photos access needed', 'Allow photo access to add things.'); return; }
-    const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images', 'videos'],
-      allowsMultipleSelection: true,
-      selectionLimit: 20,
-      quality: 0.7,
-    });
+  // Two ways in. The camera is photo-only on purpose: recording video
+  // captures audio too, and this build does not declare a microphone
+  // usage string, so iOS would kill the app the moment the recorder
+  // opened. Video already shot in the Camera app picks up fine from the
+  // library.
+  const add = () => {
+    Alert.alert("Add to Dad's Stuff", undefined, [
+      { text: 'Take a photo',        onPress: () => pickFrom('camera') },
+      { text: 'Choose from library', onPress: () => pickFrom('library') },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
+  const pickFrom = async (source: 'camera' | 'library') => {
+    if (source === 'camera') {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) { Alert.alert('Camera access needed', 'Allow camera access to take a photo.'); return; }
+    } else {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) { Alert.alert('Photos access needed', 'Allow photo access to add things.'); return; }
+    }
+
+    const res = source === 'camera'
+      ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.7 })
+      : await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images', 'videos'],
+          allowsMultipleSelection: true,
+          selectionLimit: 20,
+          quality: 0.7,
+        });
     if (res.canceled || !profile) return;
 
     setUploading(true);
@@ -200,7 +221,7 @@ export default function DadsStuffScreen() {
         <TouchableOpacity style={styles.addBtn} onPress={add} disabled={uploading} activeOpacity={0.85}>
           {uploading
             ? <><ActivityIndicator color="#fff" /><Text style={styles.addText}>{progress ?? 'Adding…'}</Text></>
-            : <Text style={styles.addText}>+  Add photos or videos</Text>}
+            : <Text style={styles.addText}>+  Take or add photos</Text>}
         </TouchableOpacity>
 
         {loading && <ActivityIndicator style={{ marginTop: 40 }} color={C.ink} />}
