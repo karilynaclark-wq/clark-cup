@@ -52,7 +52,6 @@ ALTER TABLE dads_stuff_votes ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Items in your family are viewable" ON dads_stuff_items;
 DROP POLICY IF EXISTS "Add an item"                       ON dads_stuff_items;
-DROP POLICY IF EXISTS "Remove an item you added"          ON dads_stuff_items;
 DROP POLICY IF EXISTS "Votes in your family are viewable" ON dads_stuff_votes;
 DROP POLICY IF EXISTS "Say what you want"                 ON dads_stuff_votes;
 DROP POLICY IF EXISTS "Change your mind"                  ON dads_stuff_votes;
@@ -67,10 +66,9 @@ CREATE POLICY "Add an item"
     AND created_by IN (SELECT id FROM profiles WHERE auth_user_id = auth.uid())
   );
 
-CREATE POLICY "Remove an item you added"
-  ON dads_stuff_items FOR DELETE USING (
-    created_by IN (SELECT id FROM profiles WHERE auth_user_id = auth.uid())
-  );
+-- Deliberately no DELETE policy: nothing here can be removed, by
+-- anyone, including whoever added it. With RLS on, the database
+-- refuses the delete whatever any copy of the app offers.
 
 CREATE POLICY "Votes in your family are viewable"
   ON dads_stuff_votes FOR SELECT USING (

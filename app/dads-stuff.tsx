@@ -147,16 +147,6 @@ export default function DadsStuffScreen() {
     await supabase.from('dads_stuff_items').update({ caption: text || null }).eq('id', itemId);
   };
 
-  const remove = (item: Item) => {
-    Alert.alert('Remove this?', 'It disappears for everyone, along with what people said about it.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: async () => {
-        await supabase.from('dads_stuff_items').delete().eq('id', item.id);
-        fetchData();
-      } },
-    ]);
-  };
-
   const votesFor = (id: string) => votes.filter((v) => v.item_id === id);
   const myChoice = (id: string) => votes.find((v) => v.item_id === id && v.profile_id === profile?.id)?.choice;
 
@@ -288,9 +278,6 @@ export default function DadsStuffScreen() {
                 </View>
               )}
 
-              <TouchableOpacity onPress={() => remove(item)} style={styles.removeWrap}>
-                <Text style={styles.remove}>Remove</Text>
-              </TouchableOpacity>
             </View>
           );
         })}
@@ -334,6 +321,4 @@ const styles = StyleSheet.create({
   tallies:    { paddingHorizontal: 16, paddingTop: 10, gap: 2 },
   tally:      { fontSize: 12, color: C.inkMid, lineHeight: 17 },
   tallyLabel: { fontWeight: '700', color: C.ink },
-  removeWrap: { paddingHorizontal: 16, paddingTop: 10 },
-  remove:     { fontSize: 12, color: C.inkDim, fontWeight: '600' },
 });
