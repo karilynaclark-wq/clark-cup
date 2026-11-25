@@ -135,31 +135,37 @@ export default function DadsStuffScreen() {
       if (!perm.granted) { Alert.alert('Photos access needed', 'Allow photo access to add things.'); return; }
     }
 
+    // 0.4 puts a camera-roll photo near a megabyte instead of four or
+    // five. Indistinguishable on a phone, roughly four times faster, and
+    // far less likely to time out halfway.
+    const QUALITY = 0.4;
     const res = source === 'camera'
-      ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.7 })
+      ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: QUALITY })
       : await ImagePicker.launchImageLibraryAsync({
           mediaTypes: ['images', 'videos'],
           allowsMultipleSelection: true,
           selectionLimit: 20,
-          quality: 0.7,
+          quality: QUALITY,
         });
     if (res.canceled || !profile) return;
 
     setUploading(true);
-    let done = 0, failed = 0;
-    for (const asset of res.assets) {
-      done += 1;
-      setProgress(`Adding ${done} of ${res.assets.length}…`);
-      try {
+    let done = 0;
+    const failures: { index: number; why: string }[] = [];
+    // One stamp for the batch, so a retry writes to the same path and
+    // overwrites its own half-finished attempt instead of leaving a
+    // stray copy behind.
+    const stamp = Date.now();
+
+    const upload = async (asset: ImagePicker.ImagePickerAsset, index: number) => {
         const isVideo = asset.type === 'video';
         // Picking the same photo again in a later batch is the other way
         // a duplicate arrives. The library's own asset id is stable, so
         // it tells us we already have this one.
-        if (asset.assetId && seenAssets.current.has(asset.assetId)) continue;
-        if (asset.assetId) seenAssets.current.add(asset.assetId);
+        if (asset.assetId && seenAssets.current.has(asset.assetId)) return;
         const ext = (asset.uri.split('.').pop() || (isVideo ? 'mov' : 'jpg')).toLowerCase();
         const bytes = await (await fetch(asset.uri)).arrayBuffer();
-        const path = `dads-stuff/${profile.id}-${Date.now()}-${done}.${ext}`;
+        const path = `dads-stuff/${profile.id}-${stamp}-${index}.${ext}`;
         const { error: upErr } = await supabase.storage.from('photos').upload(path, bytes, {
           contentType: isVideo ? `video/${ext === 'mov' ? 'quicktime' : ext}` : `image/${ext === 'jpg' ? 'jpeg' : ext}`,
           upsert: true,
@@ -176,14 +182,39 @@ export default function DadsStuffScreen() {
           section: section === 'all' ? 'misc' : section,
         });
         if (error) throw error;
-      } catch {
-        failed += 1;
+        // Recorded only now: marking it before the upload would make a
+        // failed photo un-retryable.
+        if (asset.assetId) seenAssets.current.add(asset.assetId);
+    };
+
+    for (const asset of res.assets) {
+      done += 1;
+      const index = done;
+      setProgress(`Adding ${index} of ${res.assets.length}…`);
+      try {
+        await upload(asset, index);
+      } catch (e) {
+        // One more go before giving up: most of these are a dropped
+        // connection partway through a large file, and the retry works.
+        setProgress(`Retrying ${index} of ${res.assets.length}…`);
+        try {
+          await upload(asset, index);
+        } catch (again) {
+          failures.push({ index, why: (again as Error)?.message ?? 'unknown error' });
+        }
       }
     }
     setUploading(false);
     setProgress(null);
     await fetchData();
-    if (failed > 0) Alert.alert('Some did not upload', `${failed} of ${res.assets.length} failed. Try those again.`);
+    if (failures.length > 0) {
+      // Which ones, and why. "2 of 10 failed" tells you nothing about
+      // what to pick again.
+      Alert.alert(
+        `${failures.length} of ${res.assets.length} did not upload`,
+        `${failures.length === 1 ? 'Number' : 'Numbers'} ${failures.map((f) => f.index).join(', ')} in the order you picked them.\n\n${failures[0].why}`,
+      );
+    }
   };
 
   // ── Choosing ────────────────────────────────────────────────────
