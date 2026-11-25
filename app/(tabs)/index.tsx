@@ -194,6 +194,8 @@ export default function HomeScreen() {
   const [newEventFor,      setNewEventFor]      = useState<string | null>(null);
   const [addEventModal,    setAddEventModal]    = useState(false);
   const [standing,         setStanding]         = useState<{ place: number; tied: boolean; points: number; ahead: FamilyMember | null } | null>(null);
+  const [dadsStuff,        setDadsStuff]        = useState(false);
+  const [dadsCount,        setDadsCount]        = useState(0);
   const [newEventDate,     setNewEventDate]     = useState<Date>(new Date());
   const [newEventEnd,      setNewEventEnd]      = useState<Date>(new Date());
   // Tapping a day starts a new range; tapping a later day closes it.
@@ -358,6 +360,20 @@ export default function HomeScreen() {
       setMyChoice(picks);
     }
   }, [profile]);
+
+  // A temporary section, switched on per family, so it can be turned
+  // off again without shipping anything.
+  useEffect(() => {
+    if (!profile?.family_id) return;
+    (async () => {
+      const [{ data: fam }, { count }] = await Promise.all([
+        supabase.from('families').select('dads_stuff').eq('id', profile.family_id).single(),
+        supabase.from('dads_stuff_items').select('id', { count: 'exact', head: true }),
+      ]);
+      setDadsStuff(!!(fam as any)?.dads_stuff);
+      setDadsCount(count ?? 0);
+    })();
+  }, [profile?.family_id]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -552,6 +568,26 @@ export default function HomeScreen() {
             </ScrollView>
           )}
         </View>
+
+        {/* ── DAD'S STUFF (temporary) ─────────────────────── */}
+        {dadsStuff && (
+          <View style={styles.section}>
+            <TouchableOpacity
+              style={styles.dadsCard}
+              onPress={() => router.push('/dads-stuff' as never)}
+              activeOpacity={0.85}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.dadsTitle}>Dad's Stuff</Text>
+                <Text style={styles.dadsSub}>
+                  {dadsCount === 0
+                    ? 'Photos of things to go through'
+                    : `${dadsCount} ${dadsCount === 1 ? 'thing' : 'things'} — say what you'd like to keep`}
+                </Text>
+              </View>
+              <Text style={styles.dadsChev}>›</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* ── REMINDERS ──────────────────────────────────── */}
         <View style={styles.section}>
@@ -860,6 +896,10 @@ const styles = StyleSheet.create({
   pendingBtns:   { flexDirection: 'row', gap: 8 },
   declineBtn:    { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: C.borderMd },
   declineText:   { fontSize: 13, fontWeight: '600', color: C.inkMid },
+  dadsCard:      { flexDirection: 'row', alignItems: 'center', backgroundColor: C.card, borderRadius: 20, paddingVertical: 18, paddingHorizontal: 20, borderLeftWidth: 4, borderLeftColor: C.green },
+  dadsTitle:     { fontSize: 18, fontWeight: '700', color: C.ink },
+  dadsSub:       { fontSize: 13, color: C.inkMid, marginTop: 3 },
+  dadsChev:      { fontSize: 26, color: C.inkDim, marginLeft: 10 },
   standBackdrop: { flex: 1, backgroundColor: 'rgba(20,18,15,0.55)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 36 },
   standCard:     { width: '100%', backgroundColor: C.card, borderRadius: 26, paddingVertical: 30, paddingHorizontal: 26, alignItems: 'center' },
   standCrest:    { fontSize: 44, marginBottom: 10 },
