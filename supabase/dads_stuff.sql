@@ -28,6 +28,10 @@ CREATE TABLE IF NOT EXISTS dads_stuff_items (
   -- the app opens it in a browser sheet instead.
   kind       TEXT NOT NULL DEFAULT 'image' CHECK (kind IN ('image', 'video')),
   caption    TEXT,
+  -- Shirts, hats and so on, so a houseful is walkable in passes
+  -- rather than one endless scroll.
+  section    TEXT NOT NULL DEFAULT 'misc'
+             CHECK (section IN ('misc', 'shirts', 'hats', 'pants', 'shoes')),
   created_by UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -45,6 +49,8 @@ CREATE TABLE IF NOT EXISTS dads_stuff_votes (
 CREATE INDEX IF NOT EXISTS dads_stuff_items_family
   ON dads_stuff_items (family_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS dads_stuff_votes_item ON dads_stuff_votes (item_id);
+CREATE INDEX IF NOT EXISTS dads_stuff_items_section
+  ON dads_stuff_items (family_id, section);
 
 -- ─── Row Level Security ──────────────────────────────────────────
 ALTER TABLE dads_stuff_items ENABLE ROW LEVEL SECURITY;
@@ -65,6 +71,12 @@ CREATE POLICY "Add an item"
     family_id = current_family_id()
     AND created_by IN (SELECT id FROM profiles WHERE auth_user_id = auth.uid())
   );
+
+-- Filing an item, and labelling it. Anyone in the family, not only
+-- whoever added it: sorting a houseful is a job you share.
+DROP POLICY IF EXISTS "File an item" ON dads_stuff_items;
+CREATE POLICY "File an item"
+  ON dads_stuff_items FOR UPDATE USING (family_id = current_family_id());
 
 -- Deliberately no DELETE policy: nothing here can be removed, by
 -- anyone, including whoever added it. With RLS on, the database

@@ -33,11 +33,22 @@ const CHOICES: { key: Choice; label: string; short: string }[] = [
   { key: 'pass',  label: "Don't want",   short: 'passed'   },
 ];
 
+type Section = 'misc' | 'shirts' | 'hats' | 'pants' | 'shoes';
+const SECTIONS: { key: Section; label: string }[] = [
+  { key: 'shirts', label: 'Shirts' },
+  { key: 'hats',   label: 'Hats' },
+  { key: 'pants',  label: 'Pants' },
+  { key: 'shoes',  label: 'Shoes' },
+  { key: 'misc',   label: 'Misc' },
+];
+const sectionLabel = (k: string) => SECTIONS.find((x) => x.key === k)?.label ?? 'Misc';
+
 type Item = {
   id: string;
   media_url: string;
   kind: 'image' | 'video';
   caption: string | null;
+  section: Section;
   created_at: string;
 };
 type Vote = { item_id: string; profile_id: string; choice: Choice };
@@ -57,6 +68,8 @@ export default function DadsStuffScreen() {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [filter, setFilter]     = useState<'all' | Choice | 'undecided'>('all');
+  const [section, setSection]   = useState<'all' | Section>('all');
+  const [filing, setFiling]     = useState<string | null>(null);
   const [editing, setEditing]   = useState<string | null>(null);
   const [draft, setDraft]       = useState('');
   const [viewing, setViewing]   = useState<Item | null>(null);
@@ -68,7 +81,7 @@ export default function DadsStuffScreen() {
 
   const fetchData = useCallback(async () => {
     const [{ data: i }, { data: v }, { data: p }] = await Promise.all([
-      supabase.from('dads_stuff_items').select('id, media_url, kind, caption, created_at')
+      supabase.from('dads_stuff_items').select('id, media_url, kind, caption, section, created_at')
         .order('created_at', { ascending: false }),
       supabase.from('dads_stuff_votes').select('item_id, profile_id, choice'),
       supabase.from('profiles').select('id, username'),
@@ -154,6 +167,9 @@ export default function DadsStuffScreen() {
           created_by: profile.id,
           media_url: url,
           kind: isVideo ? 'video' : 'image',
+          // Add while looking at Hats and they are hats. Saves filing a
+          // hundred things one at a time afterwards.
+          section: section === 'all' ? 'misc' : section,
         });
         if (error) throw error;
       } catch {
@@ -186,6 +202,13 @@ export default function DadsStuffScreen() {
     if (error) { Alert.alert('Error', 'Could not save that.'); fetchData(); }
   };
 
+  const fileUnder = async (itemId: string, to: Section) => {
+    setFiling(null);
+    setItems((is) => is.map((i) => (i.id === itemId ? { ...i, section: to } : i)));
+    const { error } = await supabase.from('dads_stuff_items').update({ section: to }).eq('id', itemId);
+    if (error) { Alert.alert('Error', 'Could not move that.'); fetchData(); }
+  };
+
   const saveCaption = async (itemId: string) => {
     const text = draft.trim();
     setEditing(null);
@@ -197,10 +220,12 @@ export default function DadsStuffScreen() {
   const myChoice = (id: string) => votes.find((v) => v.item_id === id && v.profile_id === profile?.id)?.choice;
 
   const shown = items.filter((i) => {
+    if (section !== 'all' && i.section !== section) return false;
     if (filter === 'all') return true;
     if (filter === 'undecided') return !myChoice(i.id);
     return myChoice(i.id) === filter;
   });
+  const countIn = (k: Section) => items.filter((i) => i.section === k).length;
 
   const FILTERS: { key: typeof filter; label: string }[] = [
     { key: 'all',       label: 'All' },
@@ -228,6 +253,30 @@ export default function DadsStuffScreen() {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.filterRow}
         style={styles.filterWrap}>
+        <TouchableOpacity
+          style={[styles.chip, section === 'all' && styles.chipOn]}
+          onPress={() => setSection('all')}>
+          <Text style={[styles.chipText, section === 'all' && styles.chipTextOn]}>
+            Everything {items.length > 0 ? `(${items.length})` : ''}
+          </Text>
+        </TouchableOpacity>
+        {SECTIONS.map((sec) => (
+          <TouchableOpacity
+            key={sec.key}
+            style={[styles.chip, section === sec.key && styles.chipOn]}
+            onPress={() => setSection(sec.key)}>
+            <Text style={[styles.chipText, section === sec.key && styles.chipTextOn]}>
+              {sec.label} {countIn(sec.key) > 0 ? `(${countIn(sec.key)})` : ''}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.filterRow}
+        style={styles.filterWrap}>
         {FILTERS.map((f) => (
           <TouchableOpacity
             key={String(f.key)}
@@ -246,7 +295,9 @@ export default function DadsStuffScreen() {
         <TouchableOpacity style={styles.addBtn} onPress={add} disabled={uploading} activeOpacity={0.85}>
           {uploading
             ? <><ActivityIndicator color="#fff" /><Text style={styles.addText}>{progress ?? 'Adding…'}</Text></>
-            : <Text style={styles.addText}>+  Take or add photos</Text>}
+            : <Text style={styles.addText}>
+                {section === 'all' ? '+  Take or add photos' : `+  Add to ${sectionLabel(section)}`}
+              </Text>}
         </TouchableOpacity>
 
         {loading && <ActivityIndicator style={{ marginTop: 40 }} color={C.ink} />}
@@ -274,6 +325,27 @@ export default function DadsStuffScreen() {
                   {/* contain, not cover: a tall vase or a wide painting
                       should not lose its ends to a fixed-ratio crop. */}
                   <Image source={{ uri: item.media_url }} style={styles.photo} resizeMode="contain" />
+                </TouchableOpacity>
+              )}
+
+              {/* Tap to move it. Anyone can file anything -- sorting a
+                  houseful is a job you share. */}
+              {filing === item.id ? (
+                <View style={styles.fileRow}>
+                  {SECTIONS.map((sec) => (
+                    <TouchableOpacity
+                      key={sec.key}
+                      style={[styles.fileChip, item.section === sec.key && styles.fileChipOn]}
+                      onPress={() => fileUnder(item.id, sec.key)}>
+                      <Text style={[styles.fileChipText, item.section === sec.key && styles.fileChipTextOn]}>
+                        {sec.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : (
+                <TouchableOpacity onPress={() => setFiling(item.id)} style={styles.sectionTagWrap}>
+                  <Text style={styles.sectionTag}>{sectionLabel(item.section)}  ▾</Text>
                 </TouchableOpacity>
               )}
 
@@ -374,7 +446,14 @@ const styles = StyleSheet.create({
   videoTile:  { width: '100%', height: TILE * 1.4, backgroundColor: '#1c1a16', alignItems: 'center', justifyContent: 'center', gap: 6 },
   videoPlay:  { fontSize: 40, color: '#fff' },
   videoLabel: { fontSize: 13, color: 'rgba(255,255,255,0.7)', fontWeight: '600' },
-  caption:    { fontSize: 15, fontWeight: '600', color: C.ink, paddingHorizontal: 16, paddingTop: 12 },
+  sectionTagWrap:{ paddingHorizontal: 16, paddingTop: 12 },
+  sectionTag:  { alignSelf: 'flex-start', fontSize: 11, fontWeight: '700', letterSpacing: 0.6, textTransform: 'uppercase', color: C.green, backgroundColor: C.greenBg, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, overflow: 'hidden' },
+  fileRow:     { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 16, paddingTop: 12 },
+  fileChip:    { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, backgroundColor: C.bg, borderWidth: 1, borderColor: C.border },
+  fileChipOn:  { backgroundColor: C.green, borderColor: C.green },
+  fileChipText:{ fontSize: 12, fontWeight: '700', color: C.ink },
+  fileChipTextOn:{ color: '#fff' },
+  caption:    { fontSize: 15, fontWeight: '600', color: C.ink, paddingHorizontal: 16, paddingTop: 10 },
   captionEmpty:{ color: C.inkDim, fontWeight: '500' },
   capEdit:    { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingTop: 12 },
   capInput:   { flex: 1, backgroundColor: C.bg, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, fontSize: 15, color: C.ink },
