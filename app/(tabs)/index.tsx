@@ -2,7 +2,6 @@ import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
-  Image,
   ScrollView,
   StyleSheet,
   RefreshControl,
@@ -49,14 +48,6 @@ type UpcomingEvent = {
   profiles?: { username: string } | null;  // joined
 };
 type FamilyMember = { id: string; username: string; total_points: number };
-type HomeMemory = {
-  id: string;
-  body: string;
-  happened_on: string | null;
-  profiles?: { username: string } | null;
-  years_ago?: number;            // set when it falls on an anniversary
-};
-
 // Shown once per launch of the app, not once per visit to this tab.
 // Module scope rather than state, so navigating away and back does not
 // bring it round again. A fresh launch -- or an over-the-air reload --
@@ -236,12 +227,7 @@ export default function HomeScreen() {
   const [standing,         setStanding]         = useState<{ place: number; tied: boolean; points: number; ahead: FamilyMember | null } | null>(null);
   const [dadsStuff,        setDadsStuff]        = useState(false);
   const [dadsCount,        setDadsCount]        = useState(0);
-  const [memList,          setMemList]          = useState<HomeMemory[]>([]);
-  const [memIdx,           setMemIdx]           = useState(0);
-  const [homeAsk,          setHomeAsk]          = useState('');
   const [showLater,        setShowLater]        = useState(false);
-  const [memOpen,          setMemOpen]          = useState(false);
-  const [memLines,         setMemLines]         = useState(0);
   const [newEventDate,     setNewEventDate]     = useState<Date>(new Date());
   const [newEventEnd,      setNewEventEnd]      = useState<Date>(new Date());
   // Tapping a day starts a new range; tapping a later day closes it.
@@ -407,35 +393,6 @@ export default function HomeScreen() {
     }
   }, [profile]);
 
-  // The memory shown on the home page. An anniversary wins when there is
-  // one -- "two years ago today" is worth more than a random pick -- and
-  // otherwise it is whichever one came up.
-  useEffect(() => {
-    if (!profile?.family_id) return;
-    (async () => {
-      const { data } = await supabase
-        .from('memories')
-        .select('id, body, happened_on, profiles:created_by(username)')
-        .eq('kind', 'memory')
-        .order('created_at', { ascending: false });
-
-      const all = (data ?? []) as any as HomeMemory[];
-      const today = new Date();
-      for (const m of all) {
-        if (!m.happened_on) continue;
-        const [y, mo, d] = m.happened_on.split('-').map(Number);
-        if (y >= today.getFullYear()) continue;
-        const anniversary = new Date(today.getFullYear(), mo - 1, d);
-        const days = Math.round((anniversary.getTime() - today.getTime()) / 86_400_000);
-        if (Math.abs(days) <= 3) m.years_ago = today.getFullYear() - y;
-      }
-
-      setMemList(all);
-      const anniversary = all.findIndex((m) => m.years_ago !== undefined);
-      setMemIdx(anniversary >= 0 ? anniversary : Math.floor(Math.random() * Math.max(all.length, 1)));
-    })();
-  }, [profile?.family_id]);
-
   // A temporary section, switched on per family, so it can be turned
   // off again without shipping anything.
   useEffect(() => {
@@ -554,25 +511,6 @@ export default function HomeScreen() {
   const soon  = events.filter((ev) => daysFromToday(ev.event_date) <= WINDOW);
   const later = events.filter((ev) => daysFromToday(ev.event_date) > WINDOW);
   const shownEvents = showLater ? events : soon;
-
-  const shownMemory = memList[memIdx] ?? null;
-
-  // Who wrote it down is not what anyone wants to read here, so the line
-  // carries an anniversary when there is one and nothing when there is not.
-  const memKicker = (m: HomeMemory) => {
-    if (m.years_ago === 1) return 'One year ago this week  ·  ';
-    if (m.years_ago) return `${m.years_ago} years ago this week  ·  `;
-    return '';
-  };
-
-  // The answer belongs on the Memories screen, which already knows how to
-  // show one, rather than in a second copy of that here.
-  const askFromHome = () => {
-    const q = homeAsk.trim();
-    if (!q) return;
-    setHomeAsk('');
-    router.push({ pathname: '/memories', params: { q } } as never);
-  };
 
   const handleDeleteEvent = (ev: UpcomingEvent) => {
     Alert.alert(
@@ -824,84 +762,6 @@ export default function HomeScreen() {
             </View>
           </View>
         )}
-
-        {/* ── MEMORIES ────────────────────────────────────── */}
-        <View style={styles.section}>
-          <TouchableOpacity
-            style={styles.memBox}
-            activeOpacity={0.9}
-            onPress={() => router.push('/memories' as never)}>
-            <Text style={styles.memLabel}>📖  MEMORIES</Text>
-            {shownMemory ? (
-              <>
-                <Text style={styles.memQuote} numberOfLines={memOpen ? undefined : 3}>
-                  “{shownMemory.body}”
-                </Text>
-                {/* The same words at full length, laid out but never drawn,
-                    purely to find out how many lines they really take. */}
-                <Text
-                  style={[styles.memQuote, styles.measure]}
-                  onTextLayout={(ev) => setMemLines(ev.nativeEvent.lines.length)}
-                  pointerEvents="none">
-                  “{shownMemory.body}”
-                </Text>
-                {(() => {
-                  const kicker = memKicker(shownMemory);
-                  const more = memLines > 3;
-                  if (!kicker && !more) return null;
-                  return (
-                    <Text style={styles.memBy}>
-                      {more ? kicker : kicker.replace(/\s+·\s+$/, '')}
-                      {more && (
-                        <Text style={styles.memLink} onPress={() => setMemOpen((v) => !v)}>
-                          {memOpen ? 'Show less' : 'See More'}
-                        </Text>
-                      )}
-                    </Text>
-                  );
-                })()}
-              </>
-            ) : (
-              <Text style={styles.memQuote}>
-                Nothing written down yet — add the first one.
-              </Text>
-            )}
-
-            <View style={styles.memAskRow}>
-              <TextInput
-                style={styles.memAsk}
-                value={homeAsk}
-                onChangeText={setHomeAsk}
-                placeholder="Ask about any memory..."
-                placeholderTextColor={C.inkDim}
-                returnKeyType="search"
-                onSubmitEditing={askFromHome}
-              />
-              <TouchableOpacity
-                style={[styles.memGo, !homeAsk.trim() && styles.memGoOff]}
-                onPress={askFromHome}
-                disabled={!homeAsk.trim()}
-                accessibilityLabel="Ask">
-                <Text style={styles.memGoText}>→</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.memBtnRow}>
-              <TouchableOpacity
-                style={styles.memAdd}
-                activeOpacity={0.85}
-                onPress={() => router.push({ pathname: '/memories', params: { add: '1' } } as never)}>
-                <Text style={styles.memAddText}>+  Add a memory</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.memSeeAll}
-                activeOpacity={0.85}
-                onPress={() => router.push('/memories' as never)}>
-                <Text style={styles.memSeeAllText}>See all</Text>
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        </View>
 
         {/* ── DAD'S STUFF (temporary) ─────────────────────── */}
         {dadsStuff && (
@@ -1157,22 +1017,6 @@ const styles = StyleSheet.create({
   earnCtaText:   { fontSize: 15, fontWeight: '700', color: '#fff' },
 
   // Memories
-  memBox:        { backgroundColor: 'rgba(58,107,74,0.07)', borderRadius: 20, padding: 18, borderWidth: 1, borderColor: 'rgba(58,107,74,0.12)' },
-  memLabel:      { fontSize: 10, fontWeight: '800', color: C.green, letterSpacing: 1, marginBottom: 12 },
-  memQuote:      { fontSize: 17, fontWeight: '600', color: C.ink, lineHeight: 24 },
-  measure:       { position: 'absolute', left: 0, right: 0, opacity: 0, zIndex: -1 },
-  memBy:         { fontSize: 12, color: C.inkMid, marginTop: 10 },
-  memLink:       { fontWeight: '700', color: C.green, textDecorationLine: 'underline' },
-  memAskRow:     { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16 },
-  memAsk:        { flex: 1, height: 44, backgroundColor: C.card, borderRadius: 22, paddingHorizontal: 16, fontSize: 14, color: C.ink, borderWidth: 1, borderColor: 'rgba(28,26,22,0.08)' },
-  memGo:         { width: 40, height: 40, borderRadius: 20, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center' },
-  memGoOff:      { opacity: 0.35 },
-  memGoText:     { fontSize: 17, color: '#fff', fontWeight: '700' },
-  memBtnRow:     { flexDirection: 'row', gap: 10, marginTop: 12 },
-  memAdd:        { flex: 1, backgroundColor: C.green, borderRadius: 14, paddingVertical: 13, alignItems: 'center' },
-  memAddText:    { fontSize: 14, fontWeight: '700', color: '#fff' },
-  memSeeAll:     { flex: 1, borderRadius: 14, paddingVertical: 13, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(58,107,74,0.3)' },
-  memSeeAllText: { fontSize: 14, fontWeight: '700', color: C.green },
   dadsChev:      { fontSize: 26, color: C.inkDim, marginLeft: 10 },
   standBackdrop: { flex: 1, backgroundColor: 'rgba(20,18,15,0.55)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 36 },
   standCard:     { width: '100%', backgroundColor: C.card, borderRadius: 26, paddingVertical: 30, paddingHorizontal: 26, alignItems: 'center' },
