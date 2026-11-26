@@ -236,6 +236,7 @@ export default function HomeScreen() {
   const [memList,          setMemList]          = useState<HomeMemory[]>([]);
   const [memIdx,           setMemIdx]           = useState(0);
   const [homeAsk,          setHomeAsk]          = useState('');
+  const [showLater,        setShowLater]        = useState(false);
   const [newEventDate,     setNewEventDate]     = useState<Date>(new Date());
   const [newEventEnd,      setNewEventEnd]      = useState<Date>(new Date());
   // Tapping a day starts a new range; tapping a later day closes it.
@@ -532,6 +533,14 @@ export default function HomeScreen() {
   const hoursLeft = (createdAt: string) =>
     Math.max(0, 48 - Math.floor((Date.now() - new Date(createdAt).getTime()) / 3600000));
 
+  // "Coming up" means the next month, plus anything already under way.
+  // A rolling 30 days rather than the calendar month, so the section
+  // does not shrink to nothing on the 29th.
+  const WINDOW = 30;
+  const soon  = events.filter((ev) => daysFromToday(ev.event_date) <= WINDOW);
+  const later = events.filter((ev) => daysFromToday(ev.event_date) > WINDOW);
+  const shownEvents = showLater ? events : soon;
+
   const shownMemory = memList[memIdx] ?? null;
 
   // Who wrote it down is not what anyone wants to read here, so the line
@@ -613,13 +622,15 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
 
-          {events.length === 0 ? (
+          {shownEvents.length === 0 ? (
             <View style={styles.eventsEmpty}>
-              <Text style={styles.emptyText}>Nothing coming up — tap + Add!</Text>
+              <Text style={styles.emptyText}>
+                {later.length > 0 ? 'Nothing in the next month.' : 'Nothing coming up — tap + Add!'}
+              </Text>
             </View>
           ) : (
             <View style={styles.card}>
-              {events.map((ev, i) => {
+              {shownEvents.map((ev, i) => {
                 const chip = dateChip(ev);
                 const pill = statusPill(ev);
                 const mine = profile?.id && ev.created_by === profile.id;
@@ -659,6 +670,19 @@ export default function HomeScreen() {
                 );
               })}
             </View>
+          )}
+
+          {later.length > 0 && (
+            <TouchableOpacity
+              style={styles.evMore}
+              onPress={() => setShowLater((v) => !v)}
+              activeOpacity={0.7}>
+              <Text style={styles.evMoreText}>
+                {showLater
+                  ? 'Show less'
+                  : `See ${later.length} more later on`}
+              </Text>
+            </TouchableOpacity>
           )}
         </View>
 
@@ -784,14 +808,17 @@ export default function HomeScreen() {
 
         {/* ── MEMORIES ────────────────────────────────────── */}
         <View style={styles.section}>
-          <View style={styles.memBox}>
+          <TouchableOpacity
+            style={styles.memBox}
+            activeOpacity={0.9}
+            onPress={() => router.push('/memories' as never)}>
             <Text style={styles.memLabel}>📖  MEMORIES</Text>
             {shownMemory ? (
               <>
                 <Text style={styles.memQuote} numberOfLines={3}>“{shownMemory.body}”</Text>
                 <Text style={styles.memBy}>
                   {memKicker(shownMemory)}
-                  <Text style={styles.memLink} onPress={() => router.push('/memories-all' as never)}>
+                  <Text style={styles.memLink} onPress={() => router.push('/memories' as never)}>
                     See More
                   </Text>
                 </Text>
@@ -835,7 +862,7 @@ export default function HomeScreen() {
                 <Text style={styles.memSeeAllText}>See all</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </TouchableOpacity>
         </View>
 
         {/* ── DAD'S STUFF (temporary) ─────────────────────── */}
@@ -1075,6 +1102,8 @@ const styles = StyleSheet.create({
   evPillText:    { fontSize: 10, fontWeight: '800', color: C.inkMid, letterSpacing: 0.5 },
   evPillTextNow: { color: '#fff' },
   evDelete:      { fontSize: 13, color: C.inkDim, paddingLeft: 2 },
+  evMore:        { alignSelf: 'center', paddingVertical: 9, paddingHorizontal: 16, marginTop: 8 },
+  evMoreText:    { fontSize: 13, fontWeight: '700', color: C.green },
 
   // Earn this week
   earnRow:       { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, paddingHorizontal: 16 },
