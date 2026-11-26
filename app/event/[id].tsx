@@ -44,7 +44,7 @@ type Ev = {
   event_date: string;
   end_date: string | null;
   date_label: string | null;
-  profiles?: { username: string } | null;
+  profiles?: { username: string; first_name: string | null } | null;
 };
 
 type Photo = {
@@ -89,7 +89,7 @@ export default function EventPage() {
   const fetchData = useCallback(async () => {
     const { data: e } = await supabase
       .from('upcoming_events')
-      .select('id, name, icon, event_date, end_date, date_label, profiles!profile_id(username)')
+      .select('id, name, icon, event_date, end_date, date_label, profiles!profile_id(username, first_name)')
       .eq('id', id)
       .maybeSingle();
     setEv(e as any);
@@ -118,7 +118,7 @@ export default function EventPage() {
       .from('memories').select('id').eq('event_id', e.id).maybeSingle();
     if (found) return (found as any).id;
 
-    const who = e.profiles?.username;
+    const who = e.profiles?.first_name?.trim() || e.profiles?.username;
     const { data: made, error } = await supabase.from('memories').insert({
       family_id: profile!.family_id,
       body: `${e.name}, ${spanLabel(e)}.${who ? ` For ${who}.` : ''}`,
@@ -253,7 +253,9 @@ export default function EventPage() {
             <Text style={styles.evIcon}>{ev.icon ?? '📅'}</Text>
             <Text style={styles.evName}>{ev.name}</Text>
             <Text style={styles.evWhen}>{spanLabel(ev)}</Text>
-            <Text style={styles.evFor}>{ev.profiles?.username ?? 'Everyone'}</Text>
+            <Text style={styles.evFor}>
+              {ev.profiles?.first_name?.trim() || ev.profiles?.username || 'Everyone'}
+            </Text>
           </View>
         )}
 

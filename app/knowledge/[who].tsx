@@ -38,6 +38,7 @@ type Entry = {
   happened_text: string | null;
   people: string[];
   created_by: string | null;
+  kind: 'memory' | 'knowledge';
 };
 
 // Most of the record is worded rather than dated -- "August 1983",
@@ -88,8 +89,7 @@ export default function KnowledgePerson() {
   const fetchData = useCallback(async () => {
     const { data } = await supabase
       .from('memories')
-      .select('id, body, happened_on, happened_text, people, created_by')
-      .eq('kind', 'knowledge')
+      .select('id, body, happened_on, happened_text, people, created_by, kind')
       .contains('people', [person])
       .order('happened_on', { ascending: true, nullsFirst: false });
     const rows = ((data ?? []) as any as Entry[])

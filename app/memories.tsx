@@ -54,15 +54,6 @@ type Shot = {
   profiles?: { username: string } | null;
 };
 
-type Trip = {
-  id: string;
-  name: string;
-  icon: string | null;
-  event_date: string;
-  end_date: string | null;
-  photos: number;
-};
-
 type Turn =
   | { role: 'you'; text: string }
   | { role: 'app'; text: string; saved?: boolean };
@@ -102,7 +93,6 @@ export default function Memories() {
   const [featured, setFeatured] = useState<Memory | null>(null);
   const [lastYear, setLastYear] = useState<Shot[]>([]);
   const [people,   setPeople]   = useState<{ name: string; n: number }[]>([]);
-  const [trips,    setTrips]    = useState<Trip[]>([]);
   const scroller = useRef<ScrollView>(null);
 
   const fetchData = useCallback(async () => {
@@ -153,27 +143,6 @@ export default function Memories() {
     );
     setLastYear((shots ?? []) as any);
     setLoading(false);
-
-    // Trips worth photographing: anything in the last year, plus what is
-    // still to come. Photos get added after you are home, by which time
-    // the trip has dropped off the home page, so this is the way back to
-    // it -- and the count shows which ones nobody has photographed yet.
-    const since = new Date();
-    since.setDate(since.getDate() - 365);
-    const [{ data: evs }, { data: withPhotos }] = await Promise.all([
-      supabase.from('upcoming_events')
-        .select('id, name, icon, event_date, end_date')
-        .gte('event_date', mondayOf(since))
-        .order('event_date', { ascending: false }),
-      supabase.from('memories')
-        .select('event_id, memory_photos(count)')
-        .not('event_id', 'is', null),
-    ]);
-    const counts = new Map<string, number>();
-    for (const row of (withPhotos ?? []) as any[]) {
-      counts.set(row.event_id, row.memory_photos?.[0]?.count ?? 0);
-    }
-    setTrips(((evs ?? []) as any[]).map((t) => ({ ...t, photos: counts.get(t.id) ?? 0 })));
 
     // This week's suggestions and featured memory. Cached per week, so
     // this only costs a Claude request for whoever opens it first.
@@ -377,35 +346,6 @@ export default function Memories() {
             )}
           </View>
 
-          {/* ── Trips and events ─────────────────────────────── */}
-          {trips.length > 0 && (
-            <View style={styles.box}>
-              <Text style={styles.boxLabel}>Trips and events</Text>
-              <Text style={styles.emptyNote}>
-                Add photos from anything the family did. They are kept together as one
-                memory, so the trip comes back round on its anniversary.
-              </Text>
-              {trips.map((t) => (
-                <TouchableOpacity
-                  key={t.id}
-                  style={styles.trip}
-                  activeOpacity={0.7}
-                  onPress={() => router.push(`/event/${t.id}` as never)}>
-                  <Text style={styles.tripIcon}>{t.icon ?? '📅'}</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.tripName} numberOfLines={1}>{t.name}</Text>
-                    <Text style={styles.tripWhen}>
-                      {new Date(t.event_date + 'T12:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })}
-                    </Text>
-                  </View>
-                  <Text style={[styles.tripN, t.photos === 0 && styles.tripNone]}>
-                    {t.photos === 0 ? 'Add' : `${t.photos} 📷`}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-
           {/* ── Family knowledge ─────────────────────────────── */}
           {people.length > 0 && (
             <View style={styles.box}>
@@ -467,14 +407,6 @@ const styles = StyleSheet.create({
   featuredMeta: { fontSize: 12, color: C.inkMid, marginTop: 8 },
   featuredX:    { fontSize: 12, color: C.inkDim, marginTop: 12 },
   emptyNote:    { fontSize: 13, color: C.inkMid, lineHeight: 19 },
-
-  trip:         { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(28,26,22,0.06)' },
-  tripIcon:     { fontSize: 20 },
-  tripName:     { fontSize: 15, fontWeight: '700', color: C.ink },
-  tripWhen:     { fontSize: 12, color: C.inkMid, marginTop: 2 },
-  tripN:        { fontSize: 13, fontWeight: '700', color: C.ink },
-  tripNone:     { color: C.green },
-
   peopleRow:    { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 },
   person:       { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: 'rgba(58,107,74,0.09)', borderRadius: 18, paddingVertical: 10, paddingHorizontal: 14 },
   personName:   { fontSize: 14, fontWeight: '700', color: C.ink },
