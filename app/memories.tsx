@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Image } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
@@ -79,7 +79,9 @@ function whenLabel(m: Memory): string {
 
 export default function Memories() {
   const router = useRouter();
+  const { q, add } = useLocalSearchParams<{ q?: string; add?: string }>();
   const { profile } = useAuth();
+  const input = useRef<TextInput>(null);
 
   const [memories, setMemories] = useState<Memory[]>([]);
   const [loading,  setLoading]  = useState(true);
@@ -127,11 +129,22 @@ export default function Memories() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // Handed a question by the home page: ask it without making them type
+  // it twice. The ref guard stops a re-render sending it again.
+  const handed = useRef(false);
+  useEffect(() => {
+    if (handed.current) return;
+    if (q) { handed.current = true; setDraft(String(q)); setTimeout(() => sendText(String(q)), 60); }
+    else if (add) { handed.current = true; setTimeout(() => input.current?.focus(), 350); }
+  }, [q, add]);
+
   const onRefresh = async () => { setRefresh(true); await fetchData(); setRefresh(false); };
 
   // ── The one box ─────────────────────────────────────────────────
-  const send = async () => {
-    const text = draft.trim();
+  const send = () => sendText(draft);
+
+  const sendText = async (raw: string) => {
+    const text = raw.trim();
     if (!text || asking) return;
 
     setDraft('');
@@ -199,6 +212,7 @@ export default function Memories() {
 
         <View style={styles.composer}>
           <TextInput
+            ref={input}
             style={styles.input}
             value={draft}
             onChangeText={setDraft}

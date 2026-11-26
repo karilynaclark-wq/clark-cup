@@ -49,11 +49,12 @@ type UpcomingEvent = {
   profiles?: { username: string } | null;  // joined
 };
 type FamilyMember = { id: string; username: string; total_points: number };
-type LookBack = {
-  kind: 'photo' | 'memory';
-  years: number;
-  text: string;
-  photoUrl: string | null;
+type HomeMemory = {
+  id: string;
+  body: string;
+  happened_on: string | null;
+  profiles?: { username: string } | null;
+  years_ago?: number;            // set when it falls on an anniversary
 };
 
 // Shown once per launch of the app, not once per visit to this tab.
@@ -107,15 +108,6 @@ const daysFromToday = (iso: string) => {
 };
 
 // "in 7 days" / "tomorrow" / "today" / "happening now" for a range in progress
-const countdownLabel = (ev: { event_date: string; end_date: string | null }) => {
-  const start = daysFromToday(ev.event_date);
-  const end   = ev.end_date ? daysFromToday(ev.end_date) : start;
-  if (start > 1)  return `in ${start} days`;
-  if (start === 1) return 'tomorrow';
-  if (start === 0) return 'today';
-  return end >= 0 ? 'happening now' : '';
-};
-
 const isSameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
@@ -151,7 +143,45 @@ function rangeMarks(start: Date, end: Date) {
   return marks;
 }
 
-const CARD_W = 232;
+// The date block on a "Coming up" row: a month over a day, or a day
+// range when the event spans more than one.
+function dateChip(ev: { event_date: string; end_date: string | null }) {
+  const [y, m, d] = ev.event_date.split('-').map(Number);
+  const start = new Date(y, m - 1, d);
+  const month = start.toLocaleDateString(undefined, { month: 'short' }).toUpperCase();
+  if (!ev.end_date || ev.end_date === ev.event_date) return { month, days: `${d}` };
+  const [ey, em, ed] = ev.end_date.split('-').map(Number);
+  // A range crossing a month shows both months, so "NOV 28–DEC 2" does
+  // not read as the 28th to the 2nd of November.
+  if (em !== m || ey !== y) {
+    const endMonth = new Date(ey, em - 1, ed)
+      .toLocaleDateString(undefined, { month: 'short' }).toUpperCase();
+    return { month: `${month}–${endMonth}`, days: `${d}–${ed}` };
+  }
+  return { month, days: `${d}–${ed}` };
+}
+
+// The pill on the right of a row. Only the first two earn a solid
+// colour; anything further out is quieter.
+function statusPill(ev: { event_date: string; end_date: string | null }) {
+  const start = daysFromToday(ev.event_date);
+  const end   = ev.end_date ? daysFromToday(ev.end_date) : start;
+  if (start <= 0 && end >= 0) return { text: 'NOW', tone: 'now' as const };
+  if (start === 0) return { text: 'TODAY', tone: 'soon' as const };
+  if (start === 1) return { text: 'TOMORROW', tone: 'soon' as const };
+  if (start > 1)   return { text: `IN ${start} DAYS`, tone: 'quiet' as const };
+  return null;
+}
+
+// "in 3 days" for the next Sunday call, counted in Chicago so it matches
+// when the call actually is.
+function daysToSunday(): string {
+  const weekday = new Intl.DateTimeFormat('en-US', { timeZone: CHICAGO, weekday: 'short' })
+    .format(new Date());
+  const i = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].indexOf(weekday);
+  const until = (7 - i) % 7;
+  return until === 0 ? 'today' : until === 1 ? 'tomorrow' : `in ${until} days`;
+}
 
 // The family call is 10am in Chicago. Everyone should see it in their own
 // zone -- 10AM CST at home, 4PM BST in London -- so work out the actual
@@ -203,8 +233,9 @@ export default function HomeScreen() {
   const [standing,         setStanding]         = useState<{ place: number; tied: boolean; points: number; ahead: FamilyMember | null } | null>(null);
   const [dadsStuff,        setDadsStuff]        = useState(false);
   const [dadsCount,        setDadsCount]        = useState(0);
-  const [memCount,         setMemCount]         = useState(0);
-  const [lookBack,         setLookBack]         = useState<LookBack | null>(null);
+  const [memList,          setMemList]          = useState<HomeMemory[]>([]);
+  const [memIdx,           setMemIdx]           = useState(0);
+  const [homeAsk,          setHomeAsk]          = useState('');
   const [newEventDate,     setNewEventDate]     = useState<Date>(new Date());
   const [newEventEnd,      setNewEventEnd]      = useState<Date>(new Date());
   // Tapping a day starts a new range; tapping a later day closes it.
@@ -370,54 +401,31 @@ export default function HomeScreen() {
     }
   }, [profile]);
 
-  // This time last year (or the year before that). Memories and photo
-  // contest entries both count; a photo wins when both land on the same
-  // few days, because a picture is the better thing to be shown.
+  // The memory shown on the home page. An anniversary wins when there is
+  // one -- "two years ago today" is worth more than a random pick -- and
+  // otherwise it is whichever one came up.
   useEffect(() => {
     if (!profile?.family_id) return;
     (async () => {
-      const [{ data: mems, count }, { data: shots }] = await Promise.all([
-        supabase.from('memories')
-          .select('id, body, happened_on', { count: 'exact' })
-          .not('happened_on', 'is', null),
-        supabase.from('photo_entries')
-          .select('id, photo_url, caption, week_start, kind, profiles(username)'),
-      ]);
-      setMemCount(count ?? 0);
+      const { data } = await supabase
+        .from('memories')
+        .select('id, body, happened_on, profiles:created_by(username)')
+        .order('created_at', { ascending: false });
 
+      const all = (data ?? []) as any as HomeMemory[];
       const today = new Date();
-      // How many days apart two dates are, ignoring the year. Returns
-      // null when they are in different parts of the calendar.
-      const near = (iso: string): number | null => {
-        const [y, mo, d] = iso.split('-').map(Number);
-        if (y >= today.getFullYear()) return null;        // not a look back
+      for (const m of all) {
+        if (!m.happened_on) continue;
+        const [y, mo, d] = m.happened_on.split('-').map(Number);
+        if (y >= today.getFullYear()) continue;
         const anniversary = new Date(today.getFullYear(), mo - 1, d);
         const days = Math.round((anniversary.getTime() - today.getTime()) / 86_400_000);
-        return Math.abs(days) <= 3 ? today.getFullYear() - y : null;
-      };
+        if (Math.abs(days) <= 3) m.years_ago = today.getFullYear() - y;
+      }
 
-      let pick: LookBack | null = null;
-      for (const sh of (shots ?? []) as any[]) {
-        const years = near(sh.week_start);
-        if (years === null) continue;
-        pick = {
-          kind: 'photo', years,
-          text: sh.caption
-            ? `“${sh.caption}”`
-            : `${sh.profiles?.username ?? 'Someone'}’s contest ${sh.kind === 'video' ? 'video' : 'photo'}`,
-          photoUrl: sh.kind === 'video' ? null : sh.photo_url,
-        };
-        break;
-      }
-      if (!pick) {
-        for (const m of (mems ?? []) as any[]) {
-          const years = near(m.happened_on);
-          if (years === null) continue;
-          pick = { kind: 'memory', years, text: m.body, photoUrl: null };
-          break;
-        }
-      }
-      setLookBack(pick);
+      setMemList(all);
+      const anniversary = all.findIndex((m) => m.years_ago !== undefined);
+      setMemIdx(anniversary >= 0 ? anniversary : Math.floor(Math.random() * Math.max(all.length, 1)));
     })();
   }, [profile?.family_id]);
 
@@ -524,6 +532,31 @@ export default function HomeScreen() {
   const hoursLeft = (createdAt: string) =>
     Math.max(0, 48 - Math.floor((Date.now() - new Date(createdAt).getTime()) / 3600000));
 
+  const shownMemory = memList[memIdx] ?? null;
+
+  // Never the one already on screen, so tapping always visibly changes it.
+  const showAnother = () => {
+    if (memList.length < 2) return;
+    let next = memIdx;
+    while (next === memIdx) next = Math.floor(Math.random() * memList.length);
+    setMemIdx(next);
+  };
+
+  const memKicker = (m: HomeMemory) => {
+    if (m.years_ago === 1) return 'One year ago this week';
+    if (m.years_ago) return `${m.years_ago} years ago this week`;
+    return m.profiles?.username ? `Added by ${m.profiles.username}` : 'From the family records';
+  };
+
+  // The answer belongs on the Memories screen, which already knows how to
+  // show one, rather than in a second copy of that here.
+  const askFromHome = () => {
+    const q = homeAsk.trim();
+    if (!q) return;
+    setHomeAsk('');
+    router.push({ pathname: '/memories', params: { q } } as never);
+  };
+
   const handleDeleteEvent = (ev: UpcomingEvent) => {
     Alert.alert(
       'Delete event?',
@@ -577,10 +610,10 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* ── UPCOMING ───────────────────────────────────── */}
+        {/* ── COMING UP ──────────────────────────────────── */}
         <View style={styles.section}>
           <View style={styles.sectionLabelRow}>
-            <Text style={styles.sectionLabel}>Upcoming</Text>
+            <Text style={styles.sectionLabel}>Coming up</Text>
             <TouchableOpacity style={styles.addBtn} onPress={() => { setNewEventFor(defaultEventFor()); setAddEventModal(true); }}>
               <Text style={styles.addBtnText}>+ Add</Text>
             </TouchableOpacity>
@@ -588,124 +621,80 @@ export default function HomeScreen() {
 
           {events.length === 0 ? (
             <View style={styles.eventsEmpty}>
-              <Text style={styles.emptyText}>No upcoming events — tap + Add!</Text>
+              <Text style={styles.emptyText}>Nothing coming up — tap + Add!</Text>
             </View>
           ) : (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.eventScroll}
-              decelerationRate="fast"
-              snapToInterval={CARD_W + 12}
-              snapToAlignment="start"
-            >
-              {events.map((ev) => {
-                const countdown = countdownLabel(ev);
+            <View style={styles.card}>
+              {events.map((ev, i) => {
+                const chip = dateChip(ev);
+                const pill = statusPill(ev);
+                const mine = profile?.id && ev.created_by === profile.id;
                 return (
-                  <View key={ev.id} style={styles.eventCard}>
-                    <View style={styles.ecTop}>
-                      <Text style={styles.ecIcon}>{ev.icon}</Text>
-                      {profile?.id && ev.created_by === profile.id && (
-                        <TouchableOpacity
-                          onPress={() => handleDeleteEvent(ev)}
-                          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                          accessibilityLabel={`Delete ${ev.name}`}>
-                          <Text style={styles.ecDelete}>✕</Text>
-                        </TouchableOpacity>
-                      )}
+                  <View key={ev.id} style={[styles.evRow, i < events.length - 1 && styles.rowBorder]}>
+                    <View style={styles.evChip}>
+                      <Text style={styles.evChipMonth}>{chip.month}</Text>
+                      <Text style={styles.evChipDays}>{chip.days}</Text>
                     </View>
-                    <View style={styles.ecDateRow}>
-                      <Text style={styles.ecDate}>{ev.date_label}</Text>
-                      {countdown !== '' && <Text style={styles.ecCountdown}>{countdown}</Text>}
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.evName} numberOfLines={2}>{ev.name}</Text>
+                      <Text style={styles.evFor} numberOfLines={1}>
+                        {ev.profiles?.username ?? 'Everyone'}
+                      </Text>
                     </View>
-                    <Text style={styles.ecName} numberOfLines={2}>{ev.name}</Text>
-                    <Text style={styles.ecFor} numberOfLines={1}>
-                      {ev.profiles?.username ? `For ${ev.profiles.username}` : 'Everyone'}
-                    </Text>
+                    {pill && (
+                      <View style={[
+                        styles.evPill,
+                        pill.tone === 'now'  && styles.evPillNow,
+                        pill.tone === 'soon' && styles.evPillSoon,
+                      ]}>
+                        <Text style={[
+                          styles.evPillText,
+                          pill.tone === 'now' && styles.evPillTextNow,
+                        ]}>{pill.text}</Text>
+                      </View>
+                    )}
+                    {mine && (
+                      <TouchableOpacity
+                        onPress={() => handleDeleteEvent(ev)}
+                        hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+                        accessibilityLabel={`Delete ${ev.name}`}>
+                        <Text style={styles.evDelete}>✕</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 );
               })}
-            </ScrollView>
+            </View>
           )}
         </View>
 
-        {/* ── MEMORIES ────────────────────────────────────── */}
+        {/* ── EARN THIS WEEK ─────────────────────────────── */}
         <View style={styles.section}>
-          <TouchableOpacity
-            style={styles.memCard}
-            onPress={() => router.push('/memories' as never)}
-            activeOpacity={0.85}>
-            {lookBack ? (
-              <>
-                <Text style={styles.memKicker}>
-                  {lookBack.years === 1 ? 'One year ago' : `${lookBack.years} years ago`}
-                </Text>
-                <View style={styles.memRow}>
-                  {lookBack.photoUrl && (
-                    <Image source={{ uri: lookBack.photoUrl }} style={styles.memShot} resizeMode="cover" />
-                  )}
-                  <Text style={styles.memBody} numberOfLines={4}>{lookBack.text}</Text>
-                </View>
-                <Text style={styles.memMore}>Memories ›</Text>
-              </>
-            ) : (
-              <View style={styles.memRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.memTitle}>Memories</Text>
-                  <Text style={styles.memSub}>
-                    {memCount === 0
-                      ? 'Ask about the family, or write one down'
-                      : `${memCount} written down — ask about any of it`}
-                  </Text>
-                </View>
-                <Text style={styles.dadsChev}>›</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        {/* ── DAD'S STUFF (temporary) ─────────────────────── */}
-        {dadsStuff && (
-          <View style={styles.section}>
-            <TouchableOpacity
-              style={styles.dadsCard}
-              onPress={() => router.push('/dads-stuff' as never)}
-              activeOpacity={0.85}>
+          <Text style={styles.sectionLabel}>Earn this week</Text>
+          <View style={styles.card}>
+            <View style={[styles.earnRow, styles.rowBorder]}>
+              <View style={styles.earnIcon}><Text style={styles.earnEmoji}>📞</Text></View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.dadsTitle}>Dad's Stuff</Text>
-                <Text style={styles.dadsSub}>
-                  {dadsCount === 0
-                    ? 'Photos of things to go through'
-                    : `${dadsCount} ${dadsCount === 1 ? 'thing' : 'things'} — say what you'd like to keep`}
-                </Text>
+                <Text style={styles.earnName}>Sunday Call</Text>
+                <Text style={styles.earnWhen}>Sun, {familyCallLocal()} · {daysToSunday()}</Text>
               </View>
-              <Text style={styles.dadsChev}>›</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* ── REMINDERS ──────────────────────────────────── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Weekly Reminders</Text>
-          <View style={styles.remindersRow}>
-            <View style={styles.reminderCard}>
-              <View style={styles.rTop}>
-                <Text style={styles.rEmoji}>📞</Text>
-                <View style={styles.rPtsBadge}><Text style={styles.rPtsText}>+50 pts</Text></View>
-              </View>
-              <Text style={styles.rName}>Sunday Call</Text>
-              <Text style={styles.rFreq}>Every Sunday at {familyCallLocal()}</Text>
+              <View style={styles.earnPts}><Text style={styles.earnPtsText}>+50</Text></View>
             </View>
+
+            <View style={styles.earnRow}>
+              <View style={styles.earnIcon}><Text style={styles.earnEmoji}>📸</Text></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.earnName}>Photo Contest</Text>
+                <Text style={styles.earnWhen}>Due Monday, end of day</Text>
+              </View>
+              <View style={styles.earnPts}><Text style={styles.earnPtsText}>+100</Text></View>
+            </View>
+
             <TouchableOpacity
-              style={styles.reminderCard}
+              style={styles.earnCta}
               activeOpacity={0.85}
               onPress={() => router.push('/photo-contest')}>
-              <View style={styles.rTop}>
-                <Text style={styles.rEmoji}>📸</Text>
-                <View style={styles.rPtsBadge}><Text style={styles.rPtsText}>+100 pts</Text></View>
-              </View>
-              <Text style={styles.rName}>Photo Contest</Text>
-              <Text style={styles.rFreq}>Submit your photo by EOD Monday!</Text>
+              <Text style={styles.earnCtaText}>Submit your photo</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -730,29 +719,41 @@ export default function HomeScreen() {
                 // A poll keeps its amounts out of the heading: they are on
                 // the buttons directly below, so repeating them only costs
                 // the names room and truncates them.
-                const amount  = isPoll ? '' : ` · +${req.points}`;
+                const amount  = isPoll ? options.join('/') : `${req.points}`;
                 const heading = req.beneficiary_id === req.requester_id
-                  ? `${asker}${amount}`
-                  : `${asker} → ${forWhom}${amount}`;
+                  ? `${asker} wants ${amount} pts`
+                  : `${asker} nominated ${forWhom} for ${amount} pts`;
+                const left    = hoursLeft(req.created_at);
                 // Once the buttons are gone -- you voted, or it is your own
                 // windfall -- the amounts have nowhere else to show.
                 const showButtons = !isForMe && voted === undefined;
                 const amountsTail = isPoll && !showButtons ? ` · ${options.join('/')}` : '';
                 return (
                   <View key={req.id} style={[styles.pendingRow, i < pending.length - 1 && styles.pendingBorder]}>
+                    <View style={styles.pendAvatar}>
+                      <Text style={styles.pendAvatarText}>{asker.slice(0, 1).toUpperCase()}</Text>
+                    </View>
                     <View style={{ flex: 1, paddingRight: 10 }}>
-                      <Text style={styles.pendingName} numberOfLines={1}>{heading}</Text>
-                      <Text style={styles.pendingWhat} numberOfLines={2}>{req.custom_name}</Text>
+                      <View style={styles.pendHeadRow}>
+                        <Text style={styles.pendingName} numberOfLines={1}>{heading}</Text>
+                        {(isForMe || voted !== undefined) && (
+                          <Text style={styles.pendVerdict} numberOfLines={1}>
+                            {isForMe
+                              ? 'For you'
+                              : voted
+                                ? (picked != null ? `✓ You picked ${picked}` : '✓ You approved')
+                                : '✕ You declined'}
+                          </Text>
+                        )}
+                      </View>
+                      <Text style={styles.pendingWhat} numberOfLines={2}>For: {req.custom_name}</Text>
+
+                      {/* How much of the 48 hours is left, at a glance. */}
+                      <View style={styles.pendTrack}>
+                        <View style={[styles.pendFill, { width: `${Math.round((left / 48) * 100)}%` }]} />
+                      </View>
                       <Text style={styles.pendingClock}>
-                        {hoursLeft(req.created_at)}h left
-                        {isForMe
-                          ? ' · for you'
-                          : voted === undefined
-                            ? ''
-                            : voted
-                              ? (picked != null ? ` · you picked ${picked}` : ' · you approved')
-                              : ' · you declined'}
-                        {amountsTail}
+                        Voting closes in {left}h{amountsTail}
                       </Text>
                       {/* A poll puts its amounts on their own line: three
                           buttons and a Decline will not fit beside the text. */}
@@ -786,6 +787,85 @@ export default function HomeScreen() {
                 );
               })}
             </View>
+          </View>
+        )}
+
+        {/* ── MEMORIES ────────────────────────────────────── */}
+        <View style={styles.section}>
+          <View style={styles.memBox}>
+            <Text style={styles.memLabel}>📖  MEMORIES</Text>
+            {shownMemory ? (
+              <>
+                <Text style={styles.memQuote}>“{shownMemory.body}”</Text>
+                <Text style={styles.memBy}>
+                  {memKicker(shownMemory)}
+                  {memList.length > 1 && (
+                    <>
+                      {'  ·  '}
+                      <Text style={styles.memLink} onPress={showAnother}>Show another</Text>
+                    </>
+                  )}
+                </Text>
+              </>
+            ) : (
+              <Text style={styles.memQuote}>
+                Nothing written down yet — add the first one.
+              </Text>
+            )}
+
+            <View style={styles.memAskRow}>
+              <TextInput
+                style={styles.memAsk}
+                value={homeAsk}
+                onChangeText={setHomeAsk}
+                placeholder="Ask about any memory..."
+                placeholderTextColor={C.inkDim}
+                returnKeyType="search"
+                onSubmitEditing={askFromHome}
+              />
+              <TouchableOpacity
+                style={[styles.memGo, !homeAsk.trim() && styles.memGoOff]}
+                onPress={askFromHome}
+                disabled={!homeAsk.trim()}
+                accessibilityLabel="Ask">
+                <Text style={styles.memGoText}>→</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.memBtnRow}>
+              <TouchableOpacity
+                style={styles.memAdd}
+                activeOpacity={0.85}
+                onPress={() => router.push({ pathname: '/memories', params: { add: '1' } } as never)}>
+                <Text style={styles.memAddText}>+  Add a memory</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.memSeeAll}
+                activeOpacity={0.85}
+                onPress={() => router.push('/memories-all' as never)}>
+                <Text style={styles.memSeeAllText}>See all</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+
+        {/* ── DAD'S STUFF (temporary) ─────────────────────── */}
+        {dadsStuff && (
+          <View style={styles.section}>
+            <TouchableOpacity
+              style={styles.dadsCard}
+              onPress={() => router.push('/dads-stuff' as never)}
+              activeOpacity={0.85}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.dadsTitle}>Dad's Stuff</Text>
+                <Text style={styles.dadsSub}>
+                  {dadsCount === 0
+                    ? 'Photos of things to go through'
+                    : `${dadsCount} ${dadsCount === 1 ? 'thing' : 'things'} — say what you'd like to keep`}
+                </Text>
+              </View>
+              <Text style={styles.dadsChev}>›</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -966,42 +1046,75 @@ const styles = StyleSheet.create({
   addBtnText: { color: C.ink, fontSize: 14, fontWeight: '600', letterSpacing: -0.1 },
 
   // Reminder cards
-  remindersRow: { flexDirection: 'row', gap: 10 },
-  reminderCard: { flex: 1, backgroundColor: C.card, borderRadius: 22, padding: 18, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 3 },
-  rTop:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 },
-  rEmoji:       { fontSize: 28, lineHeight: 32 },
-  rPtsBadge:    { backgroundColor: C.greenBg, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  rPtsText:     { fontSize: 11, fontWeight: '600', color: C.green },
-  rName:        { fontSize: 15, fontWeight: '600', color: C.ink, marginBottom: 3 },
-  rFreq:        { fontSize: 11, color: C.inkDim, fontWeight: '500' },
-
   // Events card
   eventsCard:  { backgroundColor: C.card, borderRadius: 22, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 3 },
   eventBorder: { borderBottomWidth: 1, borderBottomColor: 'rgba(28,26,22,0.07)' },
   eventItem:   { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 18, paddingVertical: 15 },
 
   // Upcoming: horizontally scrolling cards
-  eventScroll: { gap: 12, paddingRight: 20, paddingVertical: 2 },
   pendingCard:   { backgroundColor: C.card, borderRadius: 18, marginHorizontal: 20, borderWidth: 1, borderColor: C.border, overflow: 'hidden' },
-  pendingRow:    { flexDirection: 'row', alignItems: 'center', padding: 14 },
+  pendingRow:    { flexDirection: 'row', alignItems: 'flex-start', gap: 12, padding: 14 },
+  pendAvatar:    { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(28,26,22,0.06)', alignItems: 'center', justifyContent: 'center', marginTop: 2 },
+  pendAvatarText:{ fontSize: 14, fontWeight: '800', color: C.inkMid },
+  pendHeadRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  pendVerdict:   { fontSize: 12, fontWeight: '700', color: C.green },
+  pendTrack:     { height: 5, borderRadius: 3, backgroundColor: 'rgba(28,26,22,0.07)', marginTop: 10, overflow: 'hidden' },
+  pendFill:      { height: 5, borderRadius: 3, backgroundColor: '#c98a3c' },
   pendingBorder: { borderBottomWidth: 1, borderBottomColor: C.border },
   pendingName:   { fontSize: 15, fontWeight: '700', color: C.ink },
   pendingWhat:   { fontSize: 13, color: C.inkMid, marginTop: 1 },
-  pendingClock:  { fontSize: 11, color: C.inkDim, marginTop: 3 },
+  pendingClock:  { fontSize: 11, color: C.inkDim, marginTop: 6 },
   pendingBtns:   { flexDirection: 'row', gap: 8 },
   declineBtn:    { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: C.borderMd },
   declineText:   { fontSize: 13, fontWeight: '600', color: C.inkMid },
   dadsCard:      { flexDirection: 'row', alignItems: 'center', backgroundColor: C.card, borderRadius: 20, paddingVertical: 18, paddingHorizontal: 20, borderLeftWidth: 4, borderLeftColor: C.green },
   dadsTitle:     { fontSize: 18, fontWeight: '700', color: C.ink },
   dadsSub:       { fontSize: 13, color: C.inkMid, marginTop: 3 },
-  memCard:       { backgroundColor: C.card, borderRadius: 20, paddingVertical: 18, paddingHorizontal: 20, borderLeftWidth: 4, borderLeftColor: C.accent },
-  memKicker:     { fontSize: 11, fontWeight: '700', color: C.accent, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 },
-  memRow:        { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  memShot:       { width: 64, height: 64, borderRadius: 12, backgroundColor: '#e8e2d8' },
-  memBody:       { flex: 1, fontSize: 15, color: C.ink, lineHeight: 21 },
-  memTitle:      { fontSize: 18, fontWeight: '700', color: C.ink },
-  memSub:        { fontSize: 13, color: C.inkMid, marginTop: 3 },
-  memMore:       { fontSize: 13, fontWeight: '700', color: C.inkMid, marginTop: 12 },
+  // A plain white panel that rows sit inside.
+  card:          { backgroundColor: C.card, borderRadius: 20, overflow: 'hidden' },
+  rowBorder:     { borderBottomWidth: 1, borderBottomColor: 'rgba(28,26,22,0.07)' },
+
+  // Coming up
+  evRow:         { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, paddingHorizontal: 16 },
+  evChip:        { width: 52, paddingVertical: 7, borderRadius: 12, backgroundColor: '#efe7d8', alignItems: 'center' },
+  evChipMonth:   { fontSize: 9, fontWeight: '800', color: C.inkMid, letterSpacing: 0.6 },
+  evChipDays:    { fontSize: 15, fontWeight: '800', color: C.ink, marginTop: 1 },
+  evName:        { fontSize: 15, fontWeight: '700', color: C.ink },
+  evFor:         { fontSize: 13, color: C.inkMid, marginTop: 2 },
+  evPill:        { paddingVertical: 5, paddingHorizontal: 10, borderRadius: 11, backgroundColor: 'rgba(28,26,22,0.05)' },
+  evPillNow:     { backgroundColor: C.green },
+  evPillSoon:    { backgroundColor: 'rgba(58,107,74,0.12)' },
+  evPillText:    { fontSize: 10, fontWeight: '800', color: C.inkMid, letterSpacing: 0.5 },
+  evPillTextNow: { color: '#fff' },
+  evDelete:      { fontSize: 13, color: C.inkDim, paddingLeft: 2 },
+
+  // Earn this week
+  earnRow:       { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, paddingHorizontal: 16 },
+  earnIcon:      { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(58,107,74,0.10)', alignItems: 'center', justifyContent: 'center' },
+  earnEmoji:     { fontSize: 19 },
+  earnName:      { fontSize: 15, fontWeight: '700', color: C.ink },
+  earnWhen:      { fontSize: 13, color: C.inkMid, marginTop: 2 },
+  earnPts:       { paddingVertical: 5, paddingHorizontal: 11, borderRadius: 11, backgroundColor: 'rgba(28,26,22,0.05)' },
+  earnPtsText:   { fontSize: 13, fontWeight: '800', color: C.inkMid },
+  earnCta:       { backgroundColor: C.green, borderRadius: 14, paddingVertical: 15, alignItems: 'center', marginHorizontal: 16, marginBottom: 16, marginTop: 2 },
+  earnCtaText:   { fontSize: 15, fontWeight: '700', color: '#fff' },
+
+  // Memories
+  memBox:        { backgroundColor: 'rgba(58,107,74,0.07)', borderRadius: 20, padding: 18, borderWidth: 1, borderColor: 'rgba(58,107,74,0.12)' },
+  memLabel:      { fontSize: 10, fontWeight: '800', color: C.green, letterSpacing: 1, marginBottom: 12 },
+  memQuote:      { fontSize: 17, fontWeight: '600', color: C.ink, lineHeight: 24 },
+  memBy:         { fontSize: 12, color: C.inkMid, marginTop: 10 },
+  memLink:       { fontWeight: '700', color: C.green, textDecorationLine: 'underline' },
+  memAskRow:     { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16 },
+  memAsk:        { flex: 1, height: 44, backgroundColor: C.card, borderRadius: 22, paddingHorizontal: 16, fontSize: 14, color: C.ink, borderWidth: 1, borderColor: 'rgba(28,26,22,0.08)' },
+  memGo:         { width: 40, height: 40, borderRadius: 20, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center' },
+  memGoOff:      { opacity: 0.35 },
+  memGoText:     { fontSize: 17, color: '#fff', fontWeight: '700' },
+  memBtnRow:     { flexDirection: 'row', gap: 10, marginTop: 12 },
+  memAdd:        { flex: 1, backgroundColor: C.green, borderRadius: 14, paddingVertical: 13, alignItems: 'center' },
+  memAddText:    { fontSize: 14, fontWeight: '700', color: '#fff' },
+  memSeeAll:     { flex: 1, borderRadius: 14, paddingVertical: 13, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(58,107,74,0.3)' },
+  memSeeAllText: { fontSize: 14, fontWeight: '700', color: C.green },
   dadsChev:      { fontSize: 26, color: C.inkDim, marginLeft: 10 },
   standBackdrop: { flex: 1, backgroundColor: 'rgba(20,18,15,0.55)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 36 },
   standCard:     { width: '100%', backgroundColor: C.card, borderRadius: 26, paddingVertical: 30, paddingHorizontal: 26, alignItems: 'center' },
@@ -1017,15 +1130,6 @@ const styles = StyleSheet.create({
   approveBtn:    { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, backgroundColor: C.green },
   approveText:   { fontSize: 13, fontWeight: '600', color: '#fff' },
   eventsEmpty: { backgroundColor: C.card, borderRadius: 18, paddingVertical: 22, alignItems: 'center' },
-  eventCard:   { width: CARD_W, backgroundColor: C.card, borderRadius: 18, padding: 16 },
-  ecTop:       { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 },
-  ecIcon:      { fontSize: 24 },
-  ecDelete:    { fontSize: 14, color: C.inkDim, fontWeight: '500' },
-  ecDateRow:   { flexDirection: 'row', alignItems: 'baseline', gap: 6, marginBottom: 4 },
-  ecDate:      { fontSize: 13, color: C.inkMid, fontStyle: 'italic' },
-  ecCountdown: { fontSize: 13, color: C.ink, fontWeight: '500' },
-  ecName:      { fontSize: 16, fontWeight: '600', color: C.ink, lineHeight: 21, marginBottom: 4 },
-  ecFor:       { fontSize: 13, color: C.inkMid },
   emptyText:   { flex: 1, fontSize: 13, color: C.inkMid, textAlign: 'center', paddingVertical: 4 },
 
   // Recent points
