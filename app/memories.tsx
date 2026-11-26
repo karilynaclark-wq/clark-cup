@@ -124,8 +124,12 @@ export default function Memories() {
       for (const name of row.people ?? []) tally.set(name, (tally.get(name) ?? 0) + 1);
     }
     // Dad and Art are the same man, Mom and Kathy the same woman; show
-    // one button each rather than two that go to the same life.
+    // one button each rather than two that go to the same life. Partners
+    // and pets belong to whoever they came with -- Lance is part of
+    // Kelly's life, Eve and Brittany of Kris's, Duke of Kari's -- so they
+    // are still tagged and searchable, just not given a page of their own.
     for (const alias of ['Art', 'Kathy']) tally.delete(alias);
+    for (const attached of ['Lance', 'Eve', 'Brittany', 'Duke']) tally.delete(attached);
     const household = ['Dad', 'Mom', 'Kelly', 'Kris', 'Kari', 'Kyle'];
     setPeople(
       [...tally.entries()]

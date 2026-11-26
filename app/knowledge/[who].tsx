@@ -40,13 +40,27 @@ type Entry = {
   created_by: string | null;
 };
 
-// Entries are grouped by year so a long life reads in chapters. The
-// undated ones -- "Senior year: ..." -- sit at the end under their own
-// heading rather than being dropped or guessed at.
+// Most of the record is worded rather than dated -- "August 1983",
+// "September 1974 to June 1975" -- so sorting on happened_on alone sent
+// every schooling and job entry to the bottom whatever year it was.
+// This reads a year, and a month where there is one, out of either, and
+// sorts on that. Oldest first.
+const MONTHS = ['january','february','march','april','may','june',
+                'july','august','september','october','november','december'];
+
 function yearOf(e: Entry): string {
   if (e.happened_on) return e.happened_on.slice(0, 4);
   const m = (e.happened_text ?? '').match(/\b(18|19|20)\d{2}\b/);
   return m ? m[0] : '';
+}
+
+function sortKey(e: Entry): string {
+  if (e.happened_on) return e.happened_on;
+  const year = yearOf(e);
+  if (!year) return '9999-99-99';          // no year at all: last
+  const text = (e.happened_text ?? '').toLowerCase();
+  const mi = MONTHS.findIndex((name) => text.includes(name));
+  return `${year}-${String(mi + 1).padStart(2, '0')}-00`;
 }
 
 function whenLabel(e: Entry): string {
@@ -78,7 +92,9 @@ export default function KnowledgePerson() {
       .eq('kind', 'knowledge')
       .contains('people', [person])
       .order('happened_on', { ascending: true, nullsFirst: false });
-    setEntries((data ?? []) as any);
+    const rows = ((data ?? []) as any as Entry[])
+      .sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
+    setEntries(rows);
     setLoading(false);
   }, [person]);
 
