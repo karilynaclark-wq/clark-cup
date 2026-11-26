@@ -638,7 +638,11 @@ export default function HomeScreen() {
                 const pill = statusPill(ev);
                 const mine = profile?.id && ev.created_by === profile.id;
                 return (
-                  <View key={ev.id} style={[styles.evRow, i < events.length - 1 && styles.rowBorder]}>
+                  <TouchableOpacity
+                    key={ev.id}
+                    style={[styles.evRow, i < shownEvents.length - 1 && styles.rowBorder]}
+                    activeOpacity={0.7}
+                    onPress={() => router.push(`/event/${ev.id}` as never)}>
                     <View style={styles.evChip}>
                       <Text style={styles.evChipMonth}>{chip.month}</Text>
                       <Text style={styles.evChipDays}>{chip.days}</Text>
@@ -669,7 +673,7 @@ export default function HomeScreen() {
                         <Text style={styles.evDelete}>✕</Text>
                       </TouchableOpacity>
                     )}
-                  </View>
+                  </TouchableOpacity>
                 );
               })}
             </View>
