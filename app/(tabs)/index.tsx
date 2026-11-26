@@ -633,6 +633,7 @@ export default function HomeScreen() {
             <Text style={styles.sectionLabel}>Coming up</Text>
             <TouchableOpacity style={styles.addBtn} onPress={() => { setNewEventFor(defaultEventFor()); setAddEventModal(true); }}>
               <Text style={styles.addBtnText}>+ Add</Text>
+              <View style={styles.addPts}><Text style={styles.addPtsText}>+10</Text></View>
             </TouchableOpacity>
           </View>
 
@@ -1095,8 +1096,10 @@ const styles = StyleSheet.create({
   sectionLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   sectionLabel:    { fontSize: 11, fontWeight: '600', letterSpacing: 1, textTransform: 'uppercase', color: C.inkDim, marginBottom: 10 },
 
-  addBtn:     { backgroundColor: C.card, borderWidth: 1, borderColor: C.borderMd, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 99, justifyContent: 'center' },
+  addBtn:     { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: C.card, borderWidth: 1, borderColor: C.borderMd, paddingLeft: 16, paddingRight: 8, paddingVertical: 8, borderRadius: 99, justifyContent: 'center' },
   addBtnText: { color: C.ink, fontSize: 14, fontWeight: '600', letterSpacing: -0.1 },
+  addPts:     { backgroundColor: 'rgba(58,107,74,0.12)', borderRadius: 99, paddingHorizontal: 8, paddingVertical: 3 },
+  addPtsText: { color: C.green, fontSize: 12, fontWeight: '800' },
 
   // Reminder cards
   // Events card

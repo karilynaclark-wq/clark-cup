@@ -385,6 +385,12 @@ export default function PointsScreen() {
   // them by name, so sort a copy.
   const ranked = [...profiles].sort((a, b) => (b.total_points ?? 0) - (a.total_points ?? 0));
   const topPts = ranked[0]?.total_points ?? 0;
+  const lowPts = ranked.length ? (ranked[ranked.length - 1].total_points ?? 0) : 0;
+  // Half the spread again below the lowest score, so the last bar still
+  // has real height while the gaps between everyone are visible.
+  const floor  = topPts > lowPts ? Math.max(0, lowPts - (topPts - lowPts) * 0.55) : 0;
+  const barFrac = (pts: number) =>
+    topPts > floor ? Math.min(1, Math.max(0, (pts - floor) / (topPts - floor))) : 1;
 
   const ListHeader = (
     <View>
@@ -407,13 +413,12 @@ export default function PointsScreen() {
           <View style={styles.barsArea}>
             {ranked.map((p, i) => {
               const isMe = p.id === myProfile?.id;
-              const pct  = topPts > 0 ? (p.total_points ?? 0) / topPts : 0;
-              const barH = Math.max(CHART_H * pct, 8);
+              const barH = Math.max(CHART_H * barFrac(p.total_points ?? 0), 14);
               return (
                 <TouchableOpacity
                   key={p.id}
                   style={styles.barCol}
-                  onPress={() => router.push(`/(tabs)/leaderboard/${p.id}` as never)}
+                  onPress={() => router.push(`/cup/${p.id}` as never)}
                   activeOpacity={0.75}
                   hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
                   <View style={[styles.barClip, { height: barH }]}>
@@ -437,7 +442,7 @@ export default function PointsScreen() {
 
           <TouchableOpacity
             style={styles.historyLink}
-            onPress={() => router.push('/(tabs)/leaderboard/history' as never)}
+            onPress={() => router.push('/cup/history' as never)}
             activeOpacity={0.6}>
             <Text style={styles.historyIcon}>🏆</Text>
             <Text style={styles.historyLabel}>Family Cup History</Text>

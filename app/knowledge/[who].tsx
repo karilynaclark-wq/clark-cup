@@ -48,6 +48,11 @@ type Entry = {
 // sorts on that. Oldest first.
 const MONTHS = ['january','february','march','april','may','june',
                 'july','august','september','october','november','december'];
+// Seasons carry a month too: "Autumn 1973" belongs after the summer,
+// not with the entries that gave no month at all.
+const SEASONS: [string, number][] = [
+  ['spring', 3], ['summer', 6], ['autumn', 9], ['fall', 9], ['winter', 12],
+];
 
 function yearOf(e: Entry): string {
   if (e.happened_on) return e.happened_on.slice(0, 4);
@@ -61,7 +66,10 @@ function sortKey(e: Entry): string {
   if (!year) return '9999-99-99';          // no year at all: last
   const text = (e.happened_text ?? '').toLowerCase();
   const mi = MONTHS.findIndex((name) => text.includes(name));
-  return `${year}-${String(mi + 1).padStart(2, '0')}-00`;
+  if (mi >= 0) return `${year}-${String(mi + 1).padStart(2, '0')}-00`;
+  const season = SEASONS.find(([name]) => text.includes(name));
+  if (season) return `${year}-${String(season[1]).padStart(2, '0')}-00`;
+  return `${year}-00-00`;
 }
 
 function whenLabel(e: Entry): string {
@@ -93,7 +101,7 @@ export default function KnowledgePerson() {
       .contains('people', [person])
       .order('happened_on', { ascending: true, nullsFirst: false });
     const rows = ((data ?? []) as any as Entry[])
-      .sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
+      .sort((a, b) => sortKey(a).localeCompare(sortKey(b)) || a.body.localeCompare(b.body));
     setEntries(rows);
     setLoading(false);
   }, [person]);
