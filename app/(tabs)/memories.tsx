@@ -226,9 +226,13 @@ export default function Memories() {
       <StatusBar style="dark" />
 
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <Text style={styles.back}>‹</Text>
-        </TouchableOpacity>
+        {router.canGoBack() ? (
+          <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+            <Text style={styles.back}>‹</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={{ width: 18 }} />
+        )}
         <Text style={styles.title} numberOfLines={2}>Memories and Family Knowledge</Text>
         <View style={{ width: 18 }} />
       </View>

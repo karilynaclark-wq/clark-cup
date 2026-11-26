@@ -16,7 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Calendar } from 'react-native-calendars';
 import { StatusBar } from 'expo-status-bar';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import FamilyLogo from '@/components/FamilyLogo';
 import ProfileButton from '@/components/ProfileButton';
@@ -215,6 +215,9 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 export default function HomeScreen() {
   const router = useRouter();
+  // The Coming Up tab sends people here to add an event, so that the
+  // calendar and icon picker live in one place rather than two.
+  const { addEvent } = useLocalSearchParams<{ addEvent?: string }>();
   const { profile, familyName } = useAuth();
   const [feed,             setFeed]             = useState<FeedItem[]>([]);
   // Snapshotted once per visit: the dots have to stay put while you read,
@@ -448,6 +451,14 @@ export default function HomeScreen() {
   }, [profile?.family_id]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  useEffect(() => {
+    if (addEvent === '1') {
+      setNewEventFor(defaultEventFor());
+      setAddEventModal(true);
+      router.setParams({ addEvent: undefined } as never);
+    }
+  }, [addEvent]);
 
   // Where you stand, the moment the family's points have loaded.
   useEffect(() => {

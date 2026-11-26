@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase, PointSubmission, Profile } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
@@ -112,7 +113,10 @@ const LEGACY_SLOTS = [
 
 const blankQuickAdd = (): QuickAdd => ({ emoji: '⭐️', label: '', points: 10, category: 'miscellaneous' });
 
+const CHART_H = 140;
+
 export default function PointsScreen() {
+  const router = useRouter();
   const { profile: myProfile, user, refreshProfile, familyName } = useAuth();
   const [flatRows,   setFlatRows]   = useState<FlatRow[]>([]);
   const [profiles,   setProfiles]   = useState<Profile[]>([]);
@@ -377,6 +381,11 @@ export default function PointsScreen() {
     );
   };
 
+  // The chart wants them tallest first; the rest of this screen wants
+  // them by name, so sort a copy.
+  const ranked = [...profiles].sort((a, b) => (b.total_points ?? 0) - (a.total_points ?? 0));
+  const topPts = ranked[0]?.total_points ?? 0;
+
   const ListHeader = (
     <View>
       {/* Page header */}
@@ -388,9 +397,54 @@ export default function PointsScreen() {
           </View>
           <ProfileButton />
         </View>
-        <Text style={styles.pageLabel}>Activity</Text>
-        <Text style={styles.pageTitle}>Points.</Text>
+        <Text style={styles.pageLabel}>Standings</Text>
+        <Text style={styles.pageTitle}>The Cup.</Text>
       </View>
+
+      {/* ── WHERE EVERYONE STANDS ──────────────────────── */}
+      {ranked.length > 0 && (
+        <View style={styles.chartCard}>
+          <View style={styles.barsArea}>
+            {ranked.map((p, i) => {
+              const isMe = p.id === myProfile?.id;
+              const pct  = topPts > 0 ? (p.total_points ?? 0) / topPts : 0;
+              const barH = Math.max(CHART_H * pct, 8);
+              return (
+                <TouchableOpacity
+                  key={p.id}
+                  style={styles.barCol}
+                  onPress={() => router.push(`/(tabs)/leaderboard/${p.id}` as never)}
+                  activeOpacity={0.75}
+                  hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+                  <View style={[styles.barClip, { height: barH }]}>
+                    <View style={[styles.bar, { height: barH, backgroundColor: personColor(p.username) }]}>
+                      <Text style={styles.barPtsInner}>{(p.total_points ?? 0).toLocaleString()}</Text>
+                      {isMe && <View style={styles.barDot} />}
+                    </View>
+                  </View>
+                  <Text
+                    style={[styles.barName, isMe && styles.barNameMe]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.7}
+                    ellipsizeMode="tail">
+                    {p.username}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <TouchableOpacity
+            style={styles.historyLink}
+            onPress={() => router.push('/(tabs)/leaderboard/history' as never)}
+            activeOpacity={0.6}>
+            <Text style={styles.historyIcon}>🏆</Text>
+            <Text style={styles.historyLabel}>Family Cup History</Text>
+            <Text style={styles.historyChevron}>›</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Quick Add */}
       <View style={styles.section}>
@@ -682,6 +736,20 @@ export default function PointsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
+
+  chartCard:   { marginHorizontal: 20, marginBottom: 4, backgroundColor: C.card, borderRadius: 22, paddingHorizontal: 20, paddingTop: 24, paddingBottom: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 3 },
+  barsArea:    { flexDirection: 'row', alignItems: 'flex-end', gap: 10, height: CHART_H, marginBottom: 10 },
+  barCol:      { flex: 1, alignItems: 'center', justifyContent: 'flex-end', gap: 6, height: '100%' },
+  barClip:     { width: '100%', overflow: 'hidden', borderRadius: 8 },
+  bar:         { width: '100%', borderRadius: 8, position: 'relative', minHeight: 4 },
+  barPtsInner: { position: 'absolute', top: 8, alignSelf: 'center', fontSize: 10, fontStyle: 'italic', color: 'rgba(255,255,255,0.85)', letterSpacing: -0.2 },
+  barDot:      { position: 'absolute', top: 22, alignSelf: 'center', width: 6, height: 6, backgroundColor: 'rgba(255,255,255,0.7)', borderRadius: 3 },
+  barName:     { fontSize: 11, fontWeight: '600', color: C.inkMid, textAlign: 'center' },
+  barNameMe:   { color: C.ink, fontWeight: '800' },
+  historyLink: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(28,26,22,0.07)' },
+  historyIcon:    { fontSize: 14 },
+  historyLabel:   { flex: 1, fontSize: 12, fontWeight: '600', color: C.ink, letterSpacing: 0.2 },
+  historyChevron: { fontSize: 14, color: C.inkDim },
   list:      { paddingBottom: 48 },
 
   // Header

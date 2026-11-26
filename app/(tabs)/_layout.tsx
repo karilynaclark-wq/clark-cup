@@ -4,9 +4,10 @@ import { Tabs } from 'expo-router';
 import { COLORS } from '@/constants/Colors';
 
 const TABS = [
-  { name: 'index',       label: 'Home',        emoji: '🏠' },
-  { name: 'leaderboard', label: 'Leaderboard', emoji: '🏆' },
-  { name: 'my-points',   label: 'Points',      emoji: '⭐' },
+  { name: 'index',     label: 'Home',      emoji: '🏠' },
+  { name: 'my-points', label: 'The Cup',   emoji: '🏆' },
+  { name: 'coming-up', label: 'Coming Up', emoji: '📅' },
+  { name: 'memories',  label: 'Memories',  emoji: '📖' },
 ];
 
 function EmojiTabIcon({ emoji, label, focused }: { emoji: string; label: string; focused: boolean }) {
@@ -53,6 +54,10 @@ export default function TabLayout() {
       {/* Reached from the Photo Contest card on Home. Inside the tab group
           so the tab bar stays visible, but href null keeps it off the bar. */}
       <Tabs.Screen name="photo-contest" options={{ href: null }} />
+      {/* The standings and the points list are one screen now. These
+          routes stay for the per-person pages the bars link to, and for
+          Family Cup History, but the bar no longer carries them. */}
+      <Tabs.Screen name="leaderboard" options={{ href: null }} />
       {/* Reached from the avatar in each page's header rather than the tab
           bar, which keeps the bar to the three places you actually move
           between. Account deletion lives here, so it stays one tap away. */}
