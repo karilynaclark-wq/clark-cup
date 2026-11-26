@@ -78,13 +78,15 @@ Deno.serve(async (req) => {
   if (!authHeader) return Response.json({ error: 'Not signed in' }, { status: 401 });
 
   let text = '';
+  let action = 'ask';
   try {
     const body = await req.json();
     text = String(body?.text ?? '').trim();
+    action = String(body?.action ?? 'ask');
   } catch {
     return Response.json({ error: 'Bad request' }, { status: 400 });
   }
-  if (!text) return Response.json({ error: 'Nothing to go on' }, { status: 400 });
+  if (action === 'ask' && !text) return Response.json({ error: 'Nothing to go on' }, { status: 400 });
   if (text.length > 2000) {
     return Response.json({ error: 'That is a bit long — try it in a couple of sentences.' }, { status: 400 });
   }
@@ -169,6 +171,80 @@ Deno.serve(async (req) => {
 
   const today = new Date().toISOString().slice(0, 10);
   const client = new Anthropic({ apiKey });
+
+  // ── This week's picks ─────────────────────────────────────────
+  // Suggested questions, written from what the family actually has, plus
+  // one memory to feature. Generated once a week by whoever opens the
+  // screen first; everyone after that reads the stored row.
+  if (action === 'week') {
+    const d = new Date();
+    const dow = (d.getUTCDay() + 6) % 7;                   // 0 = Monday
+    const monday = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - dow))
+      .toISOString().slice(0, 10);
+
+    const { data: existing } = await asUser
+      .from('memory_week').select('memory_id, prompts').eq('week_start', monday).maybeSingle();
+    if (existing) return Response.json({ week: monday, ...existing });
+
+    if ((mems ?? []).length === 0) return Response.json({ week: monday, memory_id: null, prompts: [] });
+
+    // A memory to feature, picked without favouring old or new.
+    const featured = (mems ?? [])[Math.floor(Math.random() * (mems ?? []).length)];
+
+    let prompts: string[] = [];
+    try {
+      const res = await client.messages.create({
+        model: MODEL,
+        max_tokens: 1024,
+        output_config: {
+          effort: 'low',
+          format: {
+            type: 'json_schema',
+            schema: {
+              type: 'object',
+              properties: {
+                prompts: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description:
+                    'Four short questions a family member might tap. Each must be answerable ' +
+                    'from the records, each about something different, each under about eight ' +
+                    'words, written the way someone talks.',
+                },
+              },
+              required: ['prompts'],
+              additionalProperties: false,
+            },
+          },
+        },
+        system,
+        messages: [{
+          role: 'user',
+          content:
+            'Write four questions to offer this family as tappable suggestions above their ' +
+            'memory search box. Draw them from the records above — something specific and ' +
+            'inviting, like "What was Dad\'s fastest triathlon?" rather than "Tell me about Dad". ' +
+            'Vary who and what they are about. Do not ask anything the records cannot answer.',
+        }],
+      });
+      const block = res.content.find((b: any) => b.type === 'text');
+      const out = JSON.parse((block as any).text);
+      prompts = (out.prompts ?? []).slice(0, 4);
+    } catch (err) {
+      // Suggestions are a nicety. Losing them should not cost the family
+      // their memory of the week.
+      console.error('suggestions failed', err);
+    }
+
+    await asUser.from('memory_week').insert({
+      family_id: profile.family_id,
+      week_start: monday,
+      memory_id: featured.id,
+      prompts,
+    });
+
+    return Response.json({ week: monday, memory_id: featured.id, prompts });
+  }
 
   let parsed: any;
   try {

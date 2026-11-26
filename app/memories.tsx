@@ -18,6 +18,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
+import { Image } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 
@@ -45,9 +46,25 @@ type Memory = {
   profiles?: { username: string } | null;
 };
 
+type Shot = {
+  id: string;
+  photo_url: string;
+  caption: string | null;
+  kind: 'image' | 'video';
+  profiles?: { username: string } | null;
+};
+
 type Turn =
   | { role: 'you'; text: string }
   | { role: 'app'; text: string; saved?: boolean };
+
+// The Monday this week began on, which is how both the photo contest
+// and the weekly picks name a week.
+function mondayOf(d: Date): string {
+  const dow = (d.getDay() + 6) % 7;
+  const m = new Date(d.getFullYear(), d.getMonth(), d.getDate() - dow);
+  return `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}-${String(m.getDate()).padStart(2, '0')}`;
+}
 
 // "12 March 2019" / "summer 2019" / "" -- whatever we actually know.
 function whenLabel(m: Memory): string {
@@ -70,15 +87,42 @@ export default function Memories() {
   const [draft,    setDraft]    = useState('');
   const [asking,   setAsking]   = useState(false);
   const [turns,    setTurns]    = useState<Turn[]>([]);
+  const [prompts,  setPrompts]  = useState<string[]>([]);
+  const [featured, setFeatured] = useState<Memory | null>(null);
+  const [lastYear, setLastYear] = useState<Shot[]>([]);
   const scroller = useRef<ScrollView>(null);
 
   const fetchData = useCallback(async () => {
-    const { data } = await supabase
-      .from('memories')
-      .select('id, body, happened_on, happened_text, people, source, created_by, created_at, profiles:created_by(username)')
-      .order('created_at', { ascending: false });
-    setMemories((data ?? []) as any);
+    const thisWeek = mondayOf(new Date());
+    // 364 days keeps it on a Monday, so it lines up with how contest
+    // weeks are named.
+    const back = new Date();
+    back.setDate(back.getDate() - 364);
+    const lastYearWeek = mondayOf(back);
+
+    const [{ data: mems }, { data: shots }] = await Promise.all([
+      supabase.from('memories')
+        .select('id, body, happened_on, happened_text, people, source, created_by, created_at, profiles:created_by(username)')
+        .order('created_at', { ascending: false }),
+      supabase.from('photo_entries')
+        .select('id, photo_url, caption, kind, profiles(username)')
+        .eq('week_start', lastYearWeek),
+    ]);
+
+    const all = (mems ?? []) as any as Memory[];
+    setMemories(all);
+    setLastYear((shots ?? []) as any);
     setLoading(false);
+
+    // This week's suggestions and featured memory. Cached per week, so
+    // this only costs a Claude request for whoever opens it first.
+    if (all.length > 0) {
+      const { data: wk } = await supabase.functions.invoke('memories', { body: { action: 'week' } });
+      if (wk && (wk as any).week === thisWeek) {
+        setPrompts((wk as any).prompts ?? []);
+        setFeatured(all.find((m) => m.id === (wk as any).memory_id) ?? null);
+      }
+    }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -93,7 +137,7 @@ export default function Memories() {
     setDraft('');
     setTurns((t) => [...t, { role: 'you', text }]);
     setAsking(true);
-    setTimeout(() => scroller.current?.scrollToEnd({ animated: true }), 50);
+    setTimeout(() => scroller.current?.scrollTo({ y: 0, animated: true }), 50);
 
     try {
       const { data, error } = await supabase.functions.invoke('memories', { body: { text } });
@@ -116,7 +160,7 @@ export default function Memories() {
       }]);
     } finally {
       setAsking(false);
-      setTimeout(() => scroller.current?.scrollToEnd({ animated: true }), 50);
+      setTimeout(() => scroller.current?.scrollTo({ y: 0, animated: true }), 50);
     }
   };
 
@@ -153,78 +197,6 @@ export default function Memories() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={8}>
 
-        <ScrollView
-          ref={scroller}
-          style={{ flex: 1 }}
-          contentContainerStyle={styles.body}
-          keyboardShouldPersistTaps="handled"
-          refreshControl={<RefreshControl refreshing={refresh} onRefresh={onRefresh} tintColor={C.inkMid} />}>
-
-          {turns.length === 0 && (
-            <View style={styles.intro}>
-              <Text style={styles.introTitle}>Ask, or add one</Text>
-              <Text style={styles.introBody}>
-                Ask anything about the family — “what did we do for Mom’s birthdays?” — and
-                it will answer from what everyone has written down, photo contest entries included.
-              </Text>
-              <Text style={styles.introBody}>
-                Or just say what happened — “Kris got a dog in June 2019” — and it gets kept.
-              </Text>
-            </View>
-          )}
-
-          {turns.map((t, i) => (
-            <View
-              key={i}
-              style={[styles.turn, t.role === 'you' ? styles.turnYou : styles.turnApp]}>
-              <Text style={[styles.turnText, t.role === 'you' && styles.turnTextYou]}>{t.text}</Text>
-              {t.role === 'app' && t.saved && <Text style={styles.savedTag}>Added to memories</Text>}
-            </View>
-          ))}
-
-          {asking && (
-            <View style={[styles.turn, styles.turnApp, styles.thinking]}>
-              <ActivityIndicator size="small" color={C.inkMid} />
-              <Text style={styles.thinkingText}>Looking back…</Text>
-            </View>
-          )}
-
-          {/* ── Everything on the record ─────────────────────── */}
-          <Text style={styles.listLabel}>
-            {loading
-              ? 'Loading…'
-              : memories.length === 0
-                ? 'Nothing written down yet'
-                : `${memories.length} ${memories.length === 1 ? 'memory' : 'memories'}`}
-          </Text>
-
-          {memories.map((m) => {
-            const when = whenLabel(m);
-            const mine = m.created_by === profile?.id;
-            return (
-              <View key={m.id} style={styles.memory}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.memoryBody}>{m.body}</Text>
-                  <Text style={styles.memoryMeta}>
-                    {when || 'date unknown'}
-                    {m.people.length > 0 && ` · ${m.people.join(', ')}`}
-                    {m.profiles?.username && ` · added by ${m.profiles.username}`}
-                    {m.source === 'sheet' && ' · imported'}
-                  </Text>
-                </View>
-                {mine && (
-                  <TouchableOpacity
-                    onPress={() => remove(m)}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    accessibilityLabel="Remove this memory">
-                    <Text style={styles.memoryX}>✕</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            );
-          })}
-        </ScrollView>
-
         <View style={styles.composer}>
           <TextInput
             style={styles.input}
@@ -244,6 +216,97 @@ export default function Memories() {
             <Text style={styles.sendText}>↑</Text>
           </TouchableOpacity>
         </View>
+
+        <ScrollView
+          ref={scroller}
+          style={{ flex: 1 }}
+          contentContainerStyle={styles.body}
+          keyboardShouldPersistTaps="handled"
+          refreshControl={<RefreshControl refreshing={refresh} onRefresh={onRefresh} tintColor={C.inkMid} />}>
+
+          {turns.length === 0 && (
+            <Text style={styles.hint}>
+              Ask about the family, or just say what happened — “Kris got a dog in June 2019” —
+              and it gets kept.
+            </Text>
+          )}
+
+          {turns.map((t, i) => (
+            <View
+              key={i}
+              style={[styles.turn, t.role === 'you' ? styles.turnYou : styles.turnApp]}>
+              <Text style={[styles.turnText, t.role === 'you' && styles.turnTextYou]}>{t.text}</Text>
+              {t.role === 'app' && t.saved && <Text style={styles.savedTag}>Added to memories</Text>}
+            </View>
+          ))}
+
+          {asking && (
+            <View style={[styles.turn, styles.turnApp, styles.thinking]}>
+              <ActivityIndicator size="small" color={C.inkMid} />
+              <Text style={styles.thinkingText}>Looking back…</Text>
+            </View>
+          )}
+
+          {/* ── Things worth asking ──────────────────────────── */}
+          {prompts.length > 0 && turns.length === 0 && (
+            <View style={styles.bubbles}>
+              {prompts.map((p) => (
+                <TouchableOpacity
+                  key={p}
+                  style={styles.bubble}
+                  onPress={() => setDraft(p)}
+                  activeOpacity={0.7}>
+                  <Text style={styles.bubbleText}>{p}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          {/* ── Memory of the week ───────────────────────────── */}
+          {featured && (
+            <View style={styles.box}>
+              <Text style={styles.boxLabel}>Memory</Text>
+              <Text style={styles.featuredBody}>{featured.body}</Text>
+              <Text style={styles.featuredMeta}>
+                {whenLabel(featured) || 'date unknown'}
+                {featured.people.length > 0 && ` · ${featured.people.join(', ')}`}
+              </Text>
+              {featured.created_by === profile?.id && (
+                <TouchableOpacity onPress={() => remove(featured)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Text style={styles.featuredX}>Remove this memory</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {/* ── This week last year ──────────────────────────── */}
+          <View style={styles.box}>
+            <Text style={styles.boxLabel}>This week last year, in photos</Text>
+            {lastYear.length === 0 ? (
+              <Text style={styles.emptyNote}>
+                Nothing yet — the photo contest only started this September, so there is no
+                last year to look back on. This fills in from next autumn.
+              </Text>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.shotRow}>
+                {lastYear.map((sh) => (
+                  <View key={sh.id} style={styles.shot}>
+                    {sh.kind === 'video' ? (
+                      <View style={[styles.shotImg, styles.shotVideo]}><Text style={styles.shotPlay}>▶︎</Text></View>
+                    ) : (
+                      <Image source={{ uri: sh.photo_url }} style={styles.shotImg} resizeMode="cover" />
+                    )}
+                    <Text style={styles.shotWho} numberOfLines={1}>{sh.profiles?.username ?? 'Someone'}</Text>
+                    {!!sh.caption && <Text style={styles.shotCap} numberOfLines={2}>{sh.caption}</Text>}
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+          </View>
+
+          {loading && <Text style={styles.emptyNote}>Loading…</Text>}
+        </ScrollView>
+
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -257,9 +320,7 @@ const styles = StyleSheet.create({
 
   body:        { paddingHorizontal: 20, paddingBottom: 20, gap: 10 },
 
-  intro:       { backgroundColor: C.card, borderRadius: 18, padding: 18, gap: 10, marginTop: 4 },
-  introTitle:  { fontSize: 17, fontWeight: '700', color: C.ink },
-  introBody:   { fontSize: 14, color: C.inkMid, lineHeight: 20 },
+  hint:        { fontSize: 13, color: C.inkMid, lineHeight: 19, marginBottom: 4 },
 
   turn:        { borderRadius: 18, paddingVertical: 12, paddingHorizontal: 16, maxWidth: '88%' },
   turnYou:     { alignSelf: 'flex-end', backgroundColor: C.ink },
@@ -271,14 +332,26 @@ const styles = StyleSheet.create({
   thinking:    { flexDirection: 'row', alignItems: 'center', gap: 8 },
   thinkingText:{ fontSize: 14, color: C.inkMid },
 
-  listLabel:   { fontSize: 12, fontWeight: '700', color: C.inkDim, textTransform: 'uppercase', letterSpacing: 0.6, marginTop: 22, marginBottom: 2 },
+  bubbles:      { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 2 },
+  bubble:       { backgroundColor: C.card, borderRadius: 18, paddingVertical: 9, paddingHorizontal: 14, borderWidth: 1, borderColor: C.border },
+  bubbleText:   { fontSize: 13, color: C.ink },
 
-  memory:      { flexDirection: 'row', alignItems: 'flex-start', gap: 12, backgroundColor: C.card, borderRadius: 16, padding: 16 },
-  memoryBody:  { fontSize: 15, color: C.ink, lineHeight: 21 },
-  memoryMeta:  { fontSize: 12, color: C.inkMid, marginTop: 6 },
-  memoryX:     { fontSize: 15, color: C.inkDim, paddingTop: 2 },
+  box:          { backgroundColor: C.card, borderRadius: 18, padding: 18, marginTop: 12 },
+  boxLabel:     { fontSize: 11, fontWeight: '700', color: C.accent, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 },
+  featuredBody: { fontSize: 15, color: C.ink, lineHeight: 22 },
+  featuredMeta: { fontSize: 12, color: C.inkMid, marginTop: 8 },
+  featuredX:    { fontSize: 12, color: C.inkDim, marginTop: 12 },
+  emptyNote:    { fontSize: 13, color: C.inkMid, lineHeight: 19 },
 
-  composer:    { flexDirection: 'row', alignItems: 'flex-end', gap: 10, paddingHorizontal: 20, paddingTop: 10, paddingBottom: 12, borderTopWidth: 1, borderTopColor: C.border, backgroundColor: C.bg },
+  shotRow:      { gap: 12, paddingRight: 4 },
+  shot:         { width: 120 },
+  shotImg:      { width: 120, height: 120, borderRadius: 12, backgroundColor: '#e8e2d8' },
+  shotVideo:    { backgroundColor: '#1c1a16', alignItems: 'center', justifyContent: 'center' },
+  shotPlay:     { fontSize: 30, color: '#fff' },
+  shotWho:      { fontSize: 13, fontWeight: '700', color: C.ink, marginTop: 6 },
+  shotCap:      { fontSize: 12, color: C.inkMid, marginTop: 2, lineHeight: 16 },
+
+  composer:    { flexDirection: 'row', alignItems: 'flex-end', gap: 10, paddingHorizontal: 20, paddingTop: 2, paddingBottom: 14, backgroundColor: C.bg },
   input:       { flex: 1, minHeight: 44, maxHeight: 120, backgroundColor: C.card, borderRadius: 22, paddingHorizontal: 18, paddingTop: 12, paddingBottom: 12, fontSize: 15, color: C.ink },
   sendBtn:     { width: 44, height: 44, borderRadius: 22, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' },
   sendOff:     { opacity: 0.3 },
