@@ -6,8 +6,10 @@ import { COLORS } from '@/constants/Colors';
 const TABS = [
   { name: 'index',     label: 'Home',      emoji: '🏠' },
   { name: 'my-points', label: 'The Cup',   emoji: '🏆' },
-  { name: 'coming-up', label: 'Coming Up', emoji: '📅' },
-  { name: 'memories',  label: 'Memories',  emoji: '📖' },
+  // The calendar and the family record share a tab: both are the
+  // family writing down what happened. The file keeps its name so
+  // every existing link to /memories still resolves.
+  { name: 'memories',  label: 'Knowledge', emoji: '📅' },
 ];
 
 function EmojiTabIcon({ emoji, label, focused }: { emoji: string; label: string; focused: boolean }) {

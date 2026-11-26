@@ -46,6 +46,16 @@ type Memory = {
   profiles?: { username: string } | null;
 };
 
+type Ev = {
+  id: string;
+  name: string;
+  icon: string | null;
+  event_date: string;
+  end_date: string | null;
+  profiles?: { username: string; first_name: string | null } | null;
+  photos: number;
+};
+
 type Shot = {
   id: string;
   photo_url: string;
@@ -57,6 +67,19 @@ type Shot = {
 type Turn =
   | { role: 'you'; text: string }
   | { role: 'app'; text: string; saved?: boolean };
+
+// The month-over-day block on an event row.
+function chipOf(ev: Ev) {
+  const [y, m, d] = ev.event_date.split('-').map(Number);
+  const month = new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short' }).toUpperCase();
+  if (!ev.end_date || ev.end_date === ev.event_date) return { month, days: `${d}` };
+  const [ey, em, ed] = ev.end_date.split('-').map(Number);
+  if (em !== m || ey !== y) {
+    const endMonth = new Date(ey, em - 1, ed).toLocaleDateString(undefined, { month: 'short' }).toUpperCase();
+    return { month: `${month}\u2013${endMonth}`, days: `${d}\u2013${ed}` };
+  }
+  return { month, days: `${d}\u2013${ed}` };
+}
 
 // The Monday this week began on, which is how both the photo contest
 // and the weekly picks name a week.
@@ -93,6 +116,7 @@ export default function Memories() {
   const [featured, setFeatured] = useState<Memory | null>(null);
   const [lastYear, setLastYear] = useState<Shot[]>([]);
   const [people,   setPeople]   = useState<{ name: string; n: number }[]>([]);
+  const [events,   setEvents]   = useState<Ev[]>([]);
   const scroller = useRef<ScrollView>(null);
 
   const fetchData = useCallback(async () => {
@@ -143,6 +167,21 @@ export default function Memories() {
     );
     setLastYear((shots ?? []) as any);
     setLoading(false);
+
+    // The whole calendar, with how many photos each event has.
+    const [{ data: evs }, { data: shot }] = await Promise.all([
+      supabase.from('upcoming_events')
+        .select('id, name, icon, event_date, end_date, profiles!profile_id(username, first_name)')
+        .order('event_date', { ascending: true }),
+      supabase.from('memories')
+        .select('event_id, memory_photos(count)')
+        .not('event_id', 'is', null),
+    ]);
+    const shotCounts = new Map<string, number>();
+    for (const row of (shot ?? []) as any[]) {
+      shotCounts.set(row.event_id, row.memory_photos?.[0]?.count ?? 0);
+    }
+    setEvents(((evs ?? []) as any[]).map((e) => ({ ...e, photos: shotCounts.get(e.id) ?? 0 })));
 
     // This week's suggestions and featured memory. Cached per week, so
     // this only costs a Claude request for whoever opens it first.
@@ -219,6 +258,39 @@ export default function Memories() {
         },
       },
     ]);
+  };
+
+  const todayStr = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })();
+  const ahead = events.filter((e) => (e.end_date ?? e.event_date) >= todayStr);
+  // Most recent first: the trip you just got back from is the one you
+  // are most likely to be adding photos to.
+  const past  = events.filter((e) => (e.end_date ?? e.event_date) < todayStr).reverse();
+
+  const eventRow = (ev: Ev, i: number, list: Ev[]) => {
+    const c = chipOf(ev);
+    const who = ev.profiles?.first_name?.trim() || ev.profiles?.username;
+    return (
+      <TouchableOpacity
+        key={ev.id}
+        style={[styles.evRow, i < list.length - 1 && styles.evBorder]}
+        activeOpacity={0.7}
+        onPress={() => router.push(`/event/${ev.id}` as never)}>
+        <View style={styles.evChip}>
+          <Text style={styles.evChipMonth}>{c.month}</Text>
+          <Text style={styles.evChipDays}>{c.days}</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.evName} numberOfLines={2}>{ev.name}</Text>
+          <Text style={styles.evWho} numberOfLines={1}>{who ?? 'Everyone'}</Text>
+        </View>
+        <Text style={[styles.evPhotos, ev.photos === 0 && styles.evPhotosNone]}>
+          {ev.photos === 0 ? 'Add' : `${ev.photos} 📷`}
+        </Text>
+      </TouchableOpacity>
+    );
   };
 
   return (
@@ -350,6 +422,32 @@ export default function Memories() {
             )}
           </View>
 
+          {/* ── The calendar ─────────────────────────────────── */}
+          <View style={styles.box}>
+            <View style={styles.boxLabelRow}>
+              <Text style={styles.boxLabel}>Coming up</Text>
+              <TouchableOpacity
+                style={styles.evAdd}
+                onPress={() => router.push({ pathname: '/(tabs)', params: { addEvent: '1' } } as never)}>
+                <Text style={styles.evAddText}>+ Add</Text>
+              </TouchableOpacity>
+            </View>
+            {ahead.length === 0
+              ? <Text style={styles.emptyNote}>Nothing planned yet.</Text>
+              : ahead.map((e, i) => eventRow(e, i, ahead))}
+          </View>
+
+          {past.length > 0 && (
+            <View style={styles.box}>
+              <Text style={styles.boxLabel}>Already happened</Text>
+              {past.map((e, i) => eventRow(e, i, past))}
+              <Text style={styles.emptyNote}>
+                Open any of these to add photos. They are kept together as one memory, so the
+                trip comes back round on its anniversary.
+              </Text>
+            </View>
+          )}
+
           {/* ── Family knowledge ─────────────────────────────── */}
           {people.length > 0 && (
             <View style={styles.box}>
@@ -411,6 +509,19 @@ const styles = StyleSheet.create({
   featuredMeta: { fontSize: 12, color: C.inkMid, marginTop: 8 },
   featuredX:    { fontSize: 12, color: C.inkDim, marginTop: 12 },
   emptyNote:    { fontSize: 13, color: C.inkMid, lineHeight: 19 },
+  boxLabelRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  evAdd:        { backgroundColor: 'rgba(58,107,74,0.10)', borderRadius: 14, paddingVertical: 5, paddingHorizontal: 12, marginBottom: 10 },
+  evAddText:    { fontSize: 12, fontWeight: '700', color: C.green },
+  evRow:        { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
+  evBorder:     { borderBottomWidth: 1, borderBottomColor: 'rgba(28,26,22,0.06)' },
+  evChip:       { width: 44, paddingVertical: 5, borderRadius: 10, backgroundColor: '#efe7d8', alignItems: 'center' },
+  evChipMonth:  { fontSize: 8, fontWeight: '800', color: C.inkMid, letterSpacing: 0.5 },
+  evChipDays:   { fontSize: 13, fontWeight: '800', color: C.ink, marginTop: 1 },
+  evName:       { fontSize: 15, fontWeight: '700', color: C.ink },
+  evWho:        { fontSize: 12, color: C.inkMid, marginTop: 2 },
+  evPhotos:     { fontSize: 13, fontWeight: '700', color: C.ink },
+  evPhotosNone: { color: C.green },
+
   peopleRow:    { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 },
   person:       { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: 'rgba(58,107,74,0.09)', borderRadius: 18, paddingVertical: 10, paddingHorizontal: 14 },
   personName:   { fontSize: 14, fontWeight: '700', color: C.ink },

@@ -39,14 +39,6 @@ const PRIVACY_URL = 'https://www.notion.so/Clark-Cup-Privacy-Policy-3582a5e6a849
 const TERMS_URL   = 'https://app.notion.com/p/Family-Cup-Terms-of-Use-3e82a5e6a84980a687d1dd602a4104e1';
 const SUPPORT_URL = 'https://www.notion.so/Family-Cup-Support-3582a5e6a849801cb7c0ccd5a4780b6e';
 
-type PastEvent = {
-  id: string;
-  name: string;
-  icon: string | null;
-  event_date: string;
-  photos: number;
-};
-
 export default function ProfileScreen() {
   const router = useRouter();
   const { profile, user, refreshProfile, signOut, familyName } = useAuth();
@@ -64,7 +56,6 @@ export default function ProfileScreen() {
   const [deleting,        setDeleting]        = useState(false);
   const [family,          setFamily]          = useState<{ name: string; join_code: string; photo_url?: string | null } | null>(null);
   const [members,         setMembers]         = useState<{ id: string; username: string }[]>([]);
-  const [pastEvents,      setPastEvents]      = useState<PastEvent[]>([]);
   const [newPassword,     setNewPassword]     = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changingPw,      setChangingPw]      = useState(false);
@@ -103,34 +94,6 @@ export default function ProfileScreen() {
       .eq('family_id', profile.family_id)
       .order('username')
       .then(({ data }) => setMembers((data as any) ?? []));
-  }, [profile?.family_id]);
-
-  // Events that are over, newest first, with how many photos each has.
-  // A trip only gets photographed once everyone is home, so this is
-  // where it waits after dropping off the home page.
-  useEffect(() => {
-    if (!profile?.family_id) return;
-    (async () => {
-      const today = new Date();
-      const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-      const [{ data: evs }, { data: shot }] = await Promise.all([
-        supabase.from('upcoming_events')
-          .select('id, name, icon, event_date, end_date')
-          .order('event_date', { ascending: false }),
-        supabase.from('memories')
-          .select('event_id, memory_photos(count)')
-          .not('event_id', 'is', null),
-      ]);
-      const counts = new Map<string, number>();
-      for (const row of (shot ?? []) as any[]) {
-        counts.set(row.event_id, row.memory_photos?.[0]?.count ?? 0);
-      }
-      setPastEvents(
-        ((evs ?? []) as any[])
-          .filter((e) => (e.end_date ?? e.event_date) < iso)
-          .map((e) => ({ ...e, photos: counts.get(e.id) ?? 0 })),
-      );
-    })();
   }, [profile?.family_id]);
 
   useEffect(() => {
@@ -540,34 +503,6 @@ export default function ProfileScreen() {
             </View>
           )}
 
-          {/* ── PAST EVENTS ──────────────────────────────── */}
-          {/* Photos get added once you are home, by which time the trip
-              has long gone from Coming up. This is where it waits. */}
-          <Text style={[styles.sectionLabel, { marginTop: 28, paddingHorizontal: 20 }]}>Past events</Text>
-          <View style={styles.pastCard}>
-            {pastEvents.length === 0 ? (
-              <Text style={styles.pastEmpty}>Nothing has happened yet — events move here once they are over.</Text>
-            ) : pastEvents.map((ev, i) => (
-              <TouchableOpacity
-                key={ev.id}
-                style={[styles.pastRow, i < pastEvents.length - 1 && styles.pastBorder]}
-                activeOpacity={0.7}
-                onPress={() => router.push(`/event/${ev.id}` as never)}>
-                <Text style={styles.pastIcon}>{ev.icon ?? '📅'}</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.pastName} numberOfLines={1}>{ev.name}</Text>
-                  <Text style={styles.pastWhen}>
-                    {new Date(ev.event_date + 'T12:00:00').toLocaleDateString(undefined, {
-                      day: 'numeric', month: 'long', year: 'numeric' })}
-                  </Text>
-                </View>
-                <Text style={[styles.pastN, ev.photos === 0 && styles.pastAdd]}>
-                  {ev.photos === 0 ? 'Add photos' : `${ev.photos} 📷`}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
           {/* ── NOTIFICATIONS ────────────────────────────── */}
           <Text style={[styles.sectionLabel, { marginTop: 28, paddingHorizontal: 20 }]}>Notifications</Text>
           <View style={styles.notifyCard}>
@@ -665,15 +600,6 @@ const styles = StyleSheet.create({
 
   // Sections
   section:      { paddingHorizontal: 20, paddingTop: 20 },
-  pastCard:     { backgroundColor: C.card, borderRadius: 18, marginHorizontal: 20, overflow: 'hidden' },
-  pastEmpty:    { fontSize: 13, color: C.inkMid, padding: 16, lineHeight: 19 },
-  pastRow:      { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, paddingHorizontal: 16 },
-  pastBorder:   { borderBottomWidth: 1, borderBottomColor: 'rgba(28,26,22,0.07)' },
-  pastIcon:     { fontSize: 20 },
-  pastName:     { fontSize: 15, fontWeight: '700', color: C.ink },
-  pastWhen:     { fontSize: 12, color: C.inkMid, marginTop: 2 },
-  pastN:        { fontSize: 13, fontWeight: '700', color: C.ink },
-  pastAdd:      { color: C.green },
   sectionLabel: { fontSize: 11, fontWeight: '600', letterSpacing: 1, textTransform: 'uppercase', color: C.inkDim, marginBottom: 10 },
 
   // Form card
