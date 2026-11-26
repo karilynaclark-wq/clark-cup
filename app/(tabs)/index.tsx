@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
+  Image,
   ScrollView,
   StyleSheet,
   RefreshControl,
@@ -48,6 +49,12 @@ type UpcomingEvent = {
   profiles?: { username: string } | null;  // joined
 };
 type FamilyMember = { id: string; username: string; total_points: number };
+type LookBack = {
+  kind: 'photo' | 'memory';
+  years: number;
+  text: string;
+  photoUrl: string | null;
+};
 
 // Shown once per launch of the app, not once per visit to this tab.
 // Module scope rather than state, so navigating away and back does not
@@ -196,6 +203,8 @@ export default function HomeScreen() {
   const [standing,         setStanding]         = useState<{ place: number; tied: boolean; points: number; ahead: FamilyMember | null } | null>(null);
   const [dadsStuff,        setDadsStuff]        = useState(false);
   const [dadsCount,        setDadsCount]        = useState(0);
+  const [memCount,         setMemCount]         = useState(0);
+  const [lookBack,         setLookBack]         = useState<LookBack | null>(null);
   const [newEventDate,     setNewEventDate]     = useState<Date>(new Date());
   const [newEventEnd,      setNewEventEnd]      = useState<Date>(new Date());
   // Tapping a day starts a new range; tapping a later day closes it.
@@ -360,6 +369,57 @@ export default function HomeScreen() {
       setMyChoice(picks);
     }
   }, [profile]);
+
+  // This time last year (or the year before that). Memories and photo
+  // contest entries both count; a photo wins when both land on the same
+  // few days, because a picture is the better thing to be shown.
+  useEffect(() => {
+    if (!profile?.family_id) return;
+    (async () => {
+      const [{ data: mems, count }, { data: shots }] = await Promise.all([
+        supabase.from('memories')
+          .select('id, body, happened_on', { count: 'exact' })
+          .not('happened_on', 'is', null),
+        supabase.from('photo_entries')
+          .select('id, photo_url, caption, week_start, kind, profiles(username)'),
+      ]);
+      setMemCount(count ?? 0);
+
+      const today = new Date();
+      // How many days apart two dates are, ignoring the year. Returns
+      // null when they are in different parts of the calendar.
+      const near = (iso: string): number | null => {
+        const [y, mo, d] = iso.split('-').map(Number);
+        if (y >= today.getFullYear()) return null;        // not a look back
+        const anniversary = new Date(today.getFullYear(), mo - 1, d);
+        const days = Math.round((anniversary.getTime() - today.getTime()) / 86_400_000);
+        return Math.abs(days) <= 3 ? today.getFullYear() - y : null;
+      };
+
+      let pick: LookBack | null = null;
+      for (const sh of (shots ?? []) as any[]) {
+        const years = near(sh.week_start);
+        if (years === null) continue;
+        pick = {
+          kind: 'photo', years,
+          text: sh.caption
+            ? `“${sh.caption}”`
+            : `${sh.profiles?.username ?? 'Someone'}’s contest ${sh.kind === 'video' ? 'video' : 'photo'}`,
+          photoUrl: sh.kind === 'video' ? null : sh.photo_url,
+        };
+        break;
+      }
+      if (!pick) {
+        for (const m of (mems ?? []) as any[]) {
+          const years = near(m.happened_on);
+          if (years === null) continue;
+          pick = { kind: 'memory', years, text: m.body, photoUrl: null };
+          break;
+        }
+      }
+      setLookBack(pick);
+    })();
+  }, [profile?.family_id]);
 
   // A temporary section, switched on per family, so it can be turned
   // off again without shipping anything.
@@ -567,6 +627,41 @@ export default function HomeScreen() {
               })}
             </ScrollView>
           )}
+        </View>
+
+        {/* ── MEMORIES ────────────────────────────────────── */}
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.memCard}
+            onPress={() => router.push('/memories' as never)}
+            activeOpacity={0.85}>
+            {lookBack ? (
+              <>
+                <Text style={styles.memKicker}>
+                  {lookBack.years === 1 ? 'One year ago' : `${lookBack.years} years ago`}
+                </Text>
+                <View style={styles.memRow}>
+                  {lookBack.photoUrl && (
+                    <Image source={{ uri: lookBack.photoUrl }} style={styles.memShot} resizeMode="cover" />
+                  )}
+                  <Text style={styles.memBody} numberOfLines={4}>{lookBack.text}</Text>
+                </View>
+                <Text style={styles.memMore}>Memories ›</Text>
+              </>
+            ) : (
+              <View style={styles.memRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.memTitle}>Memories</Text>
+                  <Text style={styles.memSub}>
+                    {memCount === 0
+                      ? 'Ask about the family, or write one down'
+                      : `${memCount} written down — ask about any of it`}
+                  </Text>
+                </View>
+                <Text style={styles.dadsChev}>›</Text>
+              </View>
+            )}
+          </TouchableOpacity>
         </View>
 
         {/* ── DAD'S STUFF (temporary) ─────────────────────── */}
@@ -899,6 +994,14 @@ const styles = StyleSheet.create({
   dadsCard:      { flexDirection: 'row', alignItems: 'center', backgroundColor: C.card, borderRadius: 20, paddingVertical: 18, paddingHorizontal: 20, borderLeftWidth: 4, borderLeftColor: C.green },
   dadsTitle:     { fontSize: 18, fontWeight: '700', color: C.ink },
   dadsSub:       { fontSize: 13, color: C.inkMid, marginTop: 3 },
+  memCard:       { backgroundColor: C.card, borderRadius: 20, paddingVertical: 18, paddingHorizontal: 20, borderLeftWidth: 4, borderLeftColor: C.accent },
+  memKicker:     { fontSize: 11, fontWeight: '700', color: C.accent, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 },
+  memRow:        { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  memShot:       { width: 64, height: 64, borderRadius: 12, backgroundColor: '#e8e2d8' },
+  memBody:       { flex: 1, fontSize: 15, color: C.ink, lineHeight: 21 },
+  memTitle:      { fontSize: 18, fontWeight: '700', color: C.ink },
+  memSub:        { fontSize: 13, color: C.inkMid, marginTop: 3 },
+  memMore:       { fontSize: 13, fontWeight: '700', color: C.inkMid, marginTop: 12 },
   dadsChev:      { fontSize: 26, color: C.inkDim, marginLeft: 10 },
   standBackdrop: { flex: 1, backgroundColor: 'rgba(20,18,15,0.55)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 36 },
   standCard:     { width: '100%', backgroundColor: C.card, borderRadius: 26, paddingVertical: 30, paddingHorizontal: 26, alignItems: 'center' },
