@@ -132,21 +132,22 @@ Deno.serve(async (req) => {
   // One line per record. The id is what Claude cites, so the app can
   // link an answer back to the thing it came from.
   const lines: string[] = [];
+  const byId = new Map<string, string>();
   for (const m of (mems ?? []) as any[]) {
     const when = m.happened_on ?? m.happened_text ?? 'date unknown';
     const who = (m.people ?? []).join(', ');
-    lines.push(
-      `[memory:${m.id}] (${when}) ${m.body}` +
+    const line = `[memory:${m.id}] (${when}) ${m.body}` +
       (who ? ` — about: ${who}` : '') +
-      (m.profiles?.username ? ` — added by ${m.profiles.username}` : ''),
-    );
+      (m.profiles?.username ? ` — added by ${m.profiles.username}` : '');
+    lines.push(line);
+    byId.set(`memory:${m.id}`, line);
   }
   for (const e of (entries ?? []) as any[]) {
-    lines.push(
-      `[contest:${e.id}] (${e.week_start}) ${e.profiles?.username ?? 'Someone'} entered a ` +
+    const line = `[contest:${e.id}] (${e.week_start}) ${e.profiles?.username ?? 'Someone'} entered a ` +
       `${e.kind === 'video' ? 'video' : 'photo'} in the weekly contest` +
-      (e.caption ? `: "${e.caption}"` : ' with no description'),
-    );
+      (e.caption ? `: "${e.caption}"` : ' with no description');
+    lines.push(line);
+    byId.set(`contest:${e.id}`, line);
   }
 
   const roster = (members ?? []).map((m: any) => m.username).filter(Boolean).join(', ');
@@ -191,11 +192,16 @@ Deno.serve(async (req) => {
     // A memory to feature, picked without favouring old or new.
     const featured = (mems ?? [])[Math.floor(Math.random() * (mems ?? []).length)];
 
+    // Asking for a question on its own produced ones the records cannot
+    // answer -- "Where did Hufflepuff ride a camel?" when the caption says
+    // only that she rode one. So each suggestion has to come with the
+    // record it rests on and the exact words in that record that answer
+    // it, and anything whose evidence is not really there is dropped.
     let prompts: string[] = [];
     try {
       const res = await client.messages.create({
         model: MODEL,
-        max_tokens: 1024,
+        max_tokens: 2048,
         output_config: {
           effort: 'low',
           format: {
@@ -203,16 +209,36 @@ Deno.serve(async (req) => {
             schema: {
               type: 'object',
               properties: {
-                prompts: {
+                suggestions: {
                   type: 'array',
-                  items: { type: 'string' },
-                  description:
-                    'Four short questions a family member might tap. Each must be answerable ' +
-                    'from the records, each about something different, each under about eight ' +
-                    'words, written the way someone talks.',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      question: {
+                        type: 'string',
+                        description: 'Under about eight words, written the way someone talks.',
+                      },
+                      record_id: {
+                        type: 'string',
+                        description: 'The id of the one record that answers it, e.g. "memory:abc-123" or "contest:def-456".',
+                      },
+                      evidence: {
+                        type: 'string',
+                        description:
+                          'The words from that record that give the answer, copied EXACTLY, ' +
+                          'character for character. Not a paraphrase and not your own wording.',
+                      },
+                      answer: {
+                        type: 'string',
+                        description: 'The answer itself, in a few words.',
+                      },
+                    },
+                    required: ['question', 'record_id', 'evidence', 'answer'],
+                    additionalProperties: false,
+                  },
                 },
               },
-              required: ['prompts'],
+              required: ['suggestions'],
               additionalProperties: false,
             },
           },
@@ -221,15 +247,33 @@ Deno.serve(async (req) => {
         messages: [{
           role: 'user',
           content:
-            'Write four questions to offer this family as tappable suggestions above their ' +
-            'memory search box. Draw them from the records above — something specific and ' +
-            'inviting, like "What was Dad\'s fastest triathlon?" rather than "Tell me about Dad". ' +
-            'Vary who and what they are about. Do not ask anything the records cannot answer.',
+            'Suggest six questions to offer this family as tappable prompts above their memory ' +
+            'search box.\n\n' +
+            'The hard rule: a question only counts if the answer is actually written in one ' +
+            'record. Before you write each one, find the record, copy the exact words that ' +
+            'answer it, and check those words really do answer it. If a record says someone ' +
+            'rode a camel but never says where, then "Where did they ride a camel?" is NOT ' +
+            'allowed — ask "Who rode a camel?" or leave it out. Watch the small words too: ' +
+            '"taught a seminar AT someone\'s gym" does not answer "who did they teach it WITH".\n\n' +
+            'Make them specific and inviting rather than broad — "What was Dad\'s fastest ' +
+            'triathlon?" not "Tell me about Dad" — and spread them across different people ' +
+            'and different kinds of thing. Six good ones; fewer if the records cannot support six.',
         }],
       });
       const block = res.content.find((b: any) => b.type === 'text');
       const out = JSON.parse((block as any).text);
-      prompts = (out.prompts ?? []).slice(0, 4);
+
+      // Loose matching, so punctuation or case does not throw out a good
+      // one -- but the words themselves have to be in that record.
+      const flatten = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+      prompts = (out.suggestions ?? [])
+        .filter((sg: any) => {
+          const record = byId.get(String(sg.record_id ?? ''));
+          if (!record || !sg.question || !sg.evidence) return false;
+          return flatten(record).includes(flatten(sg.evidence));
+        })
+        .map((sg: any) => String(sg.question))
+        .slice(0, 4);
     } catch (err) {
       // Suggestions are a nicety. Losing them should not cost the family
       // their memory of the week.

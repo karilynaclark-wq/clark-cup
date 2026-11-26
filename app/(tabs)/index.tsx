@@ -534,18 +534,12 @@ export default function HomeScreen() {
 
   const shownMemory = memList[memIdx] ?? null;
 
-  // Never the one already on screen, so tapping always visibly changes it.
-  const showAnother = () => {
-    if (memList.length < 2) return;
-    let next = memIdx;
-    while (next === memIdx) next = Math.floor(Math.random() * memList.length);
-    setMemIdx(next);
-  };
-
+  // Who wrote it down is not what anyone wants to read here, so the line
+  // carries an anniversary when there is one and nothing when there is not.
   const memKicker = (m: HomeMemory) => {
-    if (m.years_ago === 1) return 'One year ago this week';
-    if (m.years_ago) return `${m.years_ago} years ago this week`;
-    return m.profiles?.username ? `Added by ${m.profiles.username}` : 'From the family records';
+    if (m.years_ago === 1) return 'One year ago this week  ·  ';
+    if (m.years_ago) return `${m.years_ago} years ago this week  ·  `;
+    return '';
   };
 
   // The answer belongs on the Memories screen, which already knows how to
@@ -734,19 +728,17 @@ export default function HomeScreen() {
                       <Text style={styles.pendAvatarText}>{asker.slice(0, 1).toUpperCase()}</Text>
                     </View>
                     <View style={{ flex: 1, paddingRight: 10 }}>
-                      <View style={styles.pendHeadRow}>
-                        <Text style={styles.pendingName} numberOfLines={1}>{heading}</Text>
-                        {(isForMe || voted !== undefined) && (
-                          <Text style={styles.pendVerdict} numberOfLines={1}>
-                            {isForMe
-                              ? 'For you'
-                              : voted
-                                ? (picked != null ? `✓ You picked ${picked}` : '✓ You approved')
-                                : '✕ You declined'}
-                          </Text>
-                        )}
-                      </View>
+                      <Text style={styles.pendingName} numberOfLines={2}>{heading}</Text>
                       <Text style={styles.pendingWhat} numberOfLines={2}>For: {req.custom_name}</Text>
+                      {(isForMe || voted !== undefined) && (
+                        <Text style={styles.pendVerdict}>
+                          {isForMe
+                            ? 'For you'
+                            : voted
+                              ? (picked != null ? `✓ You picked ${picked}` : '✓ You approved')
+                              : '✕ You declined'}
+                        </Text>
+                      )}
 
                       {/* How much of the 48 hours is left, at a glance. */}
                       <View style={styles.pendTrack}>
@@ -796,15 +788,12 @@ export default function HomeScreen() {
             <Text style={styles.memLabel}>📖  MEMORIES</Text>
             {shownMemory ? (
               <>
-                <Text style={styles.memQuote}>“{shownMemory.body}”</Text>
+                <Text style={styles.memQuote} numberOfLines={3}>“{shownMemory.body}”</Text>
                 <Text style={styles.memBy}>
                   {memKicker(shownMemory)}
-                  {memList.length > 1 && (
-                    <>
-                      {'  ·  '}
-                      <Text style={styles.memLink} onPress={showAnother}>Show another</Text>
-                    </>
-                  )}
+                  <Text style={styles.memLink} onPress={() => router.push('/memories-all' as never)}>
+                    See More
+                  </Text>
                 </Text>
               </>
             ) : (
@@ -1052,12 +1041,11 @@ const styles = StyleSheet.create({
   eventItem:   { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 18, paddingVertical: 15 },
 
   // Upcoming: horizontally scrolling cards
-  pendingCard:   { backgroundColor: C.card, borderRadius: 18, marginHorizontal: 20, borderWidth: 1, borderColor: C.border, overflow: 'hidden' },
+  pendingCard:   { backgroundColor: C.card, borderRadius: 18, borderWidth: 1, borderColor: C.border, overflow: 'hidden' },
   pendingRow:    { flexDirection: 'row', alignItems: 'flex-start', gap: 12, padding: 14 },
   pendAvatar:    { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(28,26,22,0.06)', alignItems: 'center', justifyContent: 'center', marginTop: 2 },
   pendAvatarText:{ fontSize: 14, fontWeight: '800', color: C.inkMid },
-  pendHeadRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  pendVerdict:   { fontSize: 12, fontWeight: '700', color: C.green },
+  pendVerdict:   { fontSize: 12, fontWeight: '700', color: C.green, marginTop: 5 },
   pendTrack:     { height: 5, borderRadius: 3, backgroundColor: 'rgba(28,26,22,0.07)', marginTop: 10, overflow: 'hidden' },
   pendFill:      { height: 5, borderRadius: 3, backgroundColor: '#c98a3c' },
   pendingBorder: { borderBottomWidth: 1, borderBottomColor: C.border },
@@ -1076,9 +1064,9 @@ const styles = StyleSheet.create({
 
   // Coming up
   evRow:         { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, paddingHorizontal: 16 },
-  evChip:        { width: 52, paddingVertical: 7, borderRadius: 12, backgroundColor: '#efe7d8', alignItems: 'center' },
-  evChipMonth:   { fontSize: 9, fontWeight: '800', color: C.inkMid, letterSpacing: 0.6 },
-  evChipDays:    { fontSize: 15, fontWeight: '800', color: C.ink, marginTop: 1 },
+  evChip:        { width: 46, paddingVertical: 6, borderRadius: 10, backgroundColor: '#efe7d8', alignItems: 'center' },
+  evChipMonth:   { fontSize: 8, fontWeight: '800', color: C.inkMid, letterSpacing: 0.5 },
+  evChipDays:    { fontSize: 13, fontWeight: '800', color: C.ink, marginTop: 1 },
   evName:        { fontSize: 15, fontWeight: '700', color: C.ink },
   evFor:         { fontSize: 13, color: C.inkMid, marginTop: 2 },
   evPill:        { paddingVertical: 5, paddingHorizontal: 10, borderRadius: 11, backgroundColor: 'rgba(28,26,22,0.05)' },
