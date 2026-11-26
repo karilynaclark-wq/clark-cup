@@ -238,6 +238,7 @@ export default function HomeScreen() {
   const [homeAsk,          setHomeAsk]          = useState('');
   const [showLater,        setShowLater]        = useState(false);
   const [memOpen,          setMemOpen]          = useState(false);
+  const [memLines,         setMemLines]         = useState(0);
   const [newEventDate,     setNewEventDate]     = useState<Date>(new Date());
   const [newEventEnd,      setNewEventEnd]      = useState<Date>(new Date());
   // Tapping a day starts a new range; tapping a later day closes it.
@@ -412,6 +413,7 @@ export default function HomeScreen() {
       const { data } = await supabase
         .from('memories')
         .select('id, body, happened_on, profiles:created_by(username)')
+        .eq('kind', 'memory')
         .order('created_at', { ascending: false });
 
       const all = (data ?? []) as any as HomeMemory[];
@@ -819,12 +821,29 @@ export default function HomeScreen() {
                 <Text style={styles.memQuote} numberOfLines={memOpen ? undefined : 3}>
                   “{shownMemory.body}”
                 </Text>
-                <Text style={styles.memBy}>
-                  {memKicker(shownMemory)}
-                  <Text style={styles.memLink} onPress={() => setMemOpen((v) => !v)}>
-                    {memOpen ? 'Show less' : 'See More'}
-                  </Text>
+                {/* The same words at full length, laid out but never drawn,
+                    purely to find out how many lines they really take. */}
+                <Text
+                  style={[styles.memQuote, styles.measure]}
+                  onTextLayout={(ev) => setMemLines(ev.nativeEvent.lines.length)}
+                  pointerEvents="none">
+                  “{shownMemory.body}”
                 </Text>
+                {(() => {
+                  const kicker = memKicker(shownMemory);
+                  const more = memLines > 3;
+                  if (!kicker && !more) return null;
+                  return (
+                    <Text style={styles.memBy}>
+                      {more ? kicker : kicker.replace(/\s+·\s+$/, '')}
+                      {more && (
+                        <Text style={styles.memLink} onPress={() => setMemOpen((v) => !v)}>
+                          {memOpen ? 'Show less' : 'See More'}
+                        </Text>
+                      )}
+                    </Text>
+                  );
+                })()}
               </>
             ) : (
               <Text style={styles.memQuote}>
@@ -1123,6 +1142,7 @@ const styles = StyleSheet.create({
   memBox:        { backgroundColor: 'rgba(58,107,74,0.07)', borderRadius: 20, padding: 18, borderWidth: 1, borderColor: 'rgba(58,107,74,0.12)' },
   memLabel:      { fontSize: 10, fontWeight: '800', color: C.green, letterSpacing: 1, marginBottom: 12 },
   memQuote:      { fontSize: 17, fontWeight: '600', color: C.ink, lineHeight: 24 },
+  measure:       { position: 'absolute', left: 0, right: 0, opacity: 0, zIndex: -1 },
   memBy:         { fontSize: 12, color: C.inkMid, marginTop: 10 },
   memLink:       { fontWeight: '700', color: C.green, textDecorationLine: 'underline' },
   memAskRow:     { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16 },
