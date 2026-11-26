@@ -47,11 +47,16 @@ const SCHEMA = {
     },
     memory_happened_on: {
       type: ['string', 'null'],
-      description: 'YYYY-MM-DD if a specific date is known or clearly implied, otherwise null.',
+      description:
+        'A full YYYY-MM-DD date, or null. Only when the exact day is known or clearly implied. ' +
+        'A month and year with no day ("June 2026") is NOT a date: send null here and put it in ' +
+        'memory_happened_text instead.',
     },
     memory_happened_text: {
       type: ['string', 'null'],
-      description: 'The vaguer wording when there is no exact date, e.g. "summer 2019". Null if a date was given.',
+      description:
+        'When the exact day is not known, the best wording for when it happened — "June 2026", ' +
+        '"summer 2019", "sometime in the 1990s". Null only when a full date was given above.',
     },
     memory_people: {
       type: 'array',
@@ -203,11 +208,22 @@ Deno.serve(async (req) => {
   // A new memory: write it as the caller, so RLS applies and the row is
   // theirs to remove later.
   if (parsed.intent === 'memory' && parsed.memory_body) {
+    // happened_on is a DATE column, and Postgres rejects anything short
+    // of a full one -- "2026-06" is an error, not a June. When Claude
+    // gives a partial date anyway, keep it as wording rather than
+    // losing the insert, and rather than inventing a day.
+    let on: string | null = parsed.memory_happened_on;
+    let when: string | null = parsed.memory_happened_text;
+    if (on && !/^\d{4}-\d{2}-\d{2}$/.test(on)) {
+      when = when ?? on;
+      on = null;
+    }
+
     const { data: saved, error } = await asUser.from('memories').insert({
       family_id: profile.family_id,
       body: parsed.memory_body,
-      happened_on: parsed.memory_happened_on,
-      happened_text: parsed.memory_happened_text,
+      happened_on: on,
+      happened_text: when,
       people: parsed.memory_people ?? [],
       source: 'app',
       created_by: profile.id,
