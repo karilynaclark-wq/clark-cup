@@ -237,7 +237,7 @@ export default function EventPage() {
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <StatusBar style="dark" />
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+        <TouchableOpacity onPress={() => (router.canGoBack() ? router.back() : router.replace('/memories' as never))} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
           <Text style={styles.back}>‹</Text>
         </TouchableOpacity>
         <Text style={styles.title} numberOfLines={1}>{ev?.name ?? 'Event'}</Text>

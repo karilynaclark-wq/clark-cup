@@ -543,10 +543,10 @@ export default function ProfileScreen() {
               <Text style={styles.legalLink}>Privacy Policy</Text>
             </TouchableOpacity>
             <Text style={styles.legalDot}>·</Text>
-            <Text style={styles.legalDot}>·</Text>
             <TouchableOpacity onPress={() => WebBrowser.openBrowserAsync(TERMS_URL)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Text style={styles.legalLink}>Terms</Text>
             </TouchableOpacity>
+            <Text style={styles.legalDot}>·</Text>
             <TouchableOpacity onPress={() => WebBrowser.openBrowserAsync(SUPPORT_URL)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Text style={styles.legalLink}>Support</Text>
             </TouchableOpacity>

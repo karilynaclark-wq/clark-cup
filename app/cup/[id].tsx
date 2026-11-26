@@ -111,7 +111,7 @@ export default function UserHistoryScreen() {
           headerTintColor: COLORS.white,
           headerTitleStyle: { fontWeight: '700', color: COLORS.white },
           headerLeft: () => (
-            <TouchableOpacity onPress={() => router.back()} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }} hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}>
+            <TouchableOpacity onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/my-points' as never))} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }} hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}>
               <FontAwesome5 name="chevron-left" size={14} color={COLORS.white} />
               <Text style={{ color: COLORS.white, fontSize: 16 }}>Leaderboard</Text>
             </TouchableOpacity>

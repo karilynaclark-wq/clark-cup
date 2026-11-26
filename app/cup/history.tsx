@@ -42,7 +42,7 @@ export default function HistoryScreen() {
           headerTitleStyle: { fontWeight: '700', color: COLORS.white },
           headerLeft: () => (
             <TouchableOpacity
-              onPress={() => router.back()}
+              onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/my-points' as never))}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
               hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
             >
