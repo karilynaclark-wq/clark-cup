@@ -201,8 +201,8 @@ export default function Memories() {
         <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
           <Text style={styles.back}>‹</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>Memories</Text>
-        <View style={{ width: 24 }} />
+        <Text style={styles.title} numberOfLines={2}>Memories and Family Knowledge</Text>
+        <View style={{ width: 18 }} />
       </View>
 
       <KeyboardAvoidingView
@@ -279,7 +279,7 @@ export default function Memories() {
           {/* ── Memory of the week ───────────────────────────── */}
           {featured && (
             <View style={styles.box}>
-              <Text style={styles.boxLabel}>Memory</Text>
+              <Text style={styles.boxLabel}>This Week’s Memory</Text>
               <Text style={styles.featuredBody}>{featured.body}</Text>
               <Text style={styles.featuredMeta}>
                 {whenLabel(featured) || 'date unknown'}
@@ -330,7 +330,7 @@ const styles = StyleSheet.create({
   container:   { flex: 1, backgroundColor: C.bg },
   header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 12 },
   back:        { fontSize: 32, color: C.ink, lineHeight: 34 },
-  title:       { fontSize: 20, fontWeight: '700', color: C.ink },
+  title:       { flex: 1, fontSize: 17, fontWeight: '700', color: C.ink, textAlign: 'center', paddingHorizontal: 8 },
 
   body:        { paddingHorizontal: 20, paddingBottom: 20, gap: 10 },
 

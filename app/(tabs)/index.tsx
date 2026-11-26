@@ -237,6 +237,7 @@ export default function HomeScreen() {
   const [memIdx,           setMemIdx]           = useState(0);
   const [homeAsk,          setHomeAsk]          = useState('');
   const [showLater,        setShowLater]        = useState(false);
+  const [memOpen,          setMemOpen]          = useState(false);
   const [newEventDate,     setNewEventDate]     = useState<Date>(new Date());
   const [newEventEnd,      setNewEventEnd]      = useState<Date>(new Date());
   // Tapping a day starts a new range; tapping a later day closes it.
@@ -815,11 +816,13 @@ export default function HomeScreen() {
             <Text style={styles.memLabel}>📖  MEMORIES</Text>
             {shownMemory ? (
               <>
-                <Text style={styles.memQuote} numberOfLines={3}>“{shownMemory.body}”</Text>
+                <Text style={styles.memQuote} numberOfLines={memOpen ? undefined : 3}>
+                  “{shownMemory.body}”
+                </Text>
                 <Text style={styles.memBy}>
                   {memKicker(shownMemory)}
-                  <Text style={styles.memLink} onPress={() => router.push('/memories' as never)}>
-                    See More
+                  <Text style={styles.memLink} onPress={() => setMemOpen((v) => !v)}>
+                    {memOpen ? 'Show less' : 'See More'}
                   </Text>
                 </Text>
               </>
@@ -858,7 +861,7 @@ export default function HomeScreen() {
               <TouchableOpacity
                 style={styles.memSeeAll}
                 activeOpacity={0.85}
-                onPress={() => router.push('/memories-all' as never)}>
+                onPress={() => router.push('/memories' as never)}>
                 <Text style={styles.memSeeAllText}>See all</Text>
               </TouchableOpacity>
             </View>
