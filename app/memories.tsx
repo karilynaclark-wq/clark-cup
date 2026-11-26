@@ -92,6 +92,7 @@ export default function Memories() {
   const [prompts,  setPrompts]  = useState<string[]>([]);
   const [featured, setFeatured] = useState<Memory | null>(null);
   const [lastYear, setLastYear] = useState<Shot[]>([]);
+  const [people,   setPeople]   = useState<{ name: string; n: number }[]>([]);
   const scroller = useRef<ScrollView>(null);
 
   const fetchData = useCallback(async () => {
@@ -113,6 +114,29 @@ export default function Memories() {
 
     const all = (mems ?? []) as any as Memory[];
     setMemories(all);
+
+    // The family record names a lot of people. Only those with a page
+    // worth opening get a button, and the household comes first.
+    const { data: known } = await supabase
+      .from('memories').select('people').eq('kind', 'knowledge');
+    const tally = new Map<string, number>();
+    for (const row of (known ?? []) as any[]) {
+      for (const name of row.people ?? []) tally.set(name, (tally.get(name) ?? 0) + 1);
+    }
+    // Dad and Art are the same man, Mom and Kathy the same woman; show
+    // one button each rather than two that go to the same life.
+    for (const alias of ['Art', 'Kathy']) tally.delete(alias);
+    const household = ['Dad', 'Mom', 'Kelly', 'Kris', 'Kari', 'Kyle'];
+    setPeople(
+      [...tally.entries()]
+        .filter(([name, n]) => n >= 5 || household.includes(name))
+        .sort((a, b) => {
+          const ia = household.indexOf(a[0]), ib = household.indexOf(b[0]);
+          if (ia !== -1 || ib !== -1) return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+          return b[1] - a[1];
+        })
+        .map(([name, n]) => ({ name, n })),
+    );
     setLastYear((shots ?? []) as any);
     setLoading(false);
 
@@ -318,6 +342,29 @@ export default function Memories() {
             )}
           </View>
 
+          {/* ── Family knowledge ─────────────────────────────── */}
+          {people.length > 0 && (
+            <View style={styles.box}>
+              <Text style={styles.boxLabel}>Family Knowledge</Text>
+              <Text style={styles.emptyNote}>
+                The written record — where everyone lived, went to school, worked and travelled.
+                Open a person to read theirs, or to add to it.
+              </Text>
+              <View style={styles.peopleRow}>
+                {people.map((p) => (
+                  <TouchableOpacity
+                    key={p.name}
+                    style={styles.person}
+                    activeOpacity={0.8}
+                    onPress={() => router.push(`/knowledge/${encodeURIComponent(p.name)}` as never)}>
+                    <Text style={styles.personName}>{p.name}</Text>
+                    <Text style={styles.personN}>{p.n}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
+
           {loading && <Text style={styles.emptyNote}>Loading…</Text>}
         </ScrollView>
 
@@ -356,6 +403,11 @@ const styles = StyleSheet.create({
   featuredMeta: { fontSize: 12, color: C.inkMid, marginTop: 8 },
   featuredX:    { fontSize: 12, color: C.inkDim, marginTop: 12 },
   emptyNote:    { fontSize: 13, color: C.inkMid, lineHeight: 19 },
+
+  peopleRow:    { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 },
+  person:       { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: 'rgba(58,107,74,0.09)', borderRadius: 18, paddingVertical: 10, paddingHorizontal: 14 },
+  personName:   { fontSize: 14, fontWeight: '700', color: C.ink },
+  personN:      { fontSize: 11, fontWeight: '700', color: C.inkMid },
 
   shotRow:      { gap: 12, paddingRight: 4 },
   shot:         { width: 120 },

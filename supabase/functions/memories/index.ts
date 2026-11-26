@@ -79,10 +79,14 @@ Deno.serve(async (req) => {
 
   let text = '';
   let action = 'ask';
+  // Set when the box being typed into belongs to one person's page, so
+  // anything added there is filed under them as family knowledge.
+  let person = '';
   try {
     const body = await req.json();
     text = String(body?.text ?? '').trim();
     action = String(body?.action ?? 'ask');
+    person = body?.person ? String(body.person).trim().slice(0, 40) : '';
   } catch {
     return Response.json({ error: 'Bad request' }, { status: 400 });
   }
@@ -121,7 +125,7 @@ Deno.serve(async (req) => {
   // row-level security decides what they may see rather than this code.
   const [{ data: mems }, { data: entries }, { data: members }] = await Promise.all([
     asUser.from('memories')
-      .select('id, body, happened_on, happened_text, people, created_at, profiles:created_by(username)')
+      .select('id, body, happened_on, happened_text, people, kind, created_at, profiles:created_by(username)')
       .order('created_at', { ascending: false }),
     asUser.from('photo_entries')
       .select('id, week_start, caption, kind, profiles(username)')
@@ -187,10 +191,13 @@ Deno.serve(async (req) => {
       .from('memory_week').select('memory_id, prompts').eq('week_start', monday).maybeSingle();
     if (existing) return Response.json({ week: monday, ...existing });
 
-    if ((mems ?? []).length === 0) return Response.json({ week: monday, memory_id: null, prompts: [] });
+    // Only a memory is ever featured. The family record -- births,
+    // deaths, addresses, diagnoses -- is there to be searched, not to
+    // greet anyone on the home screen.
+    const featurable = ((mems ?? []) as any[]).filter((m) => m.kind !== 'knowledge');
+    if (featurable.length === 0) return Response.json({ week: monday, memory_id: null, prompts: [] });
 
-    // A memory to feature, picked without favouring old or new.
-    const featured = (mems ?? [])[Math.floor(Math.random() * (mems ?? []).length)];
+    const featured = featurable[Math.floor(Math.random() * featurable.length)];
 
     // Asking for a question on its own produced ones the records cannot
     // answer -- "Where did Hufflepuff ride a camel?" when the caption says
@@ -300,7 +307,13 @@ Deno.serve(async (req) => {
       messages: [{
         role: 'user',
         content:
-          `Today is ${today}. ${profile.username} typed this into the family memories box:\n\n` +
+          `Today is ${today}. ${profile.username} typed this into the ` +
+          (person
+            ? `family record page for ${person}. Anything they are adding is about ${person}, ` +
+              `so resolve "he", "she", "they" and "his" to ${person} and write the name into the ` +
+              `sentence rather than leaving a pronoun. `
+            : 'family memories box. ') +
+          `What they typed:\n\n` +
           `${text}\n\n` +
           `Decide whether that is a question about the past or a new memory to keep. ` +
           `A new memory is usually a statement about something that happened; a question ` +
@@ -328,6 +341,9 @@ Deno.serve(async (req) => {
   // A new memory: write it as the caller, so RLS applies and the row is
   // theirs to remove later.
   if (parsed.intent === 'memory' && parsed.memory_body) {
+    // Typed on someone's own page: file it under them, as knowledge.
+    const people: string[] = parsed.memory_people ?? [];
+    if (person && !people.some((n) => n.toLowerCase() === person.toLowerCase())) people.unshift(person);
     // happened_on is a DATE column, and Postgres rejects anything short
     // of a full one -- "2026-06" is an error, not a June. When Claude
     // gives a partial date anyway, keep it as wording rather than
@@ -344,8 +360,9 @@ Deno.serve(async (req) => {
       body: parsed.memory_body,
       happened_on: on,
       happened_text: when,
-      people: parsed.memory_people ?? [],
+      people,
       source: 'app',
+      kind: person ? 'knowledge' : 'memory',
       created_by: profile.id,
     }).select('id, body, happened_on, happened_text, people').single();
 
