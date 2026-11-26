@@ -117,6 +117,9 @@ export default function Memories() {
   const [lastYear, setLastYear] = useState<Shot[]>([]);
   const [people,   setPeople]   = useState<{ name: string; n: number }[]>([]);
   const [events,   setEvents]   = useState<Ev[]>([]);
+  // A family accumulates events faster than it photographs them, so the
+  // past arrives three at a time rather than all at once.
+  const [pastShown, setPastShown] = useState(3);
   const scroller = useRef<ScrollView>(null);
 
   const fetchData = useCallback(async () => {
@@ -437,16 +440,30 @@ export default function Memories() {
               : ahead.map((e, i) => eventRow(e, i, ahead))}
           </View>
 
-          {past.length > 0 && (
-            <View style={styles.box}>
-              <Text style={styles.boxLabel}>Already happened</Text>
-              {past.map((e, i) => eventRow(e, i, past))}
-              <Text style={styles.emptyNote}>
-                Open any of these to add photos. They are kept together as one memory, so the
-                trip comes back round on its anniversary.
-              </Text>
-            </View>
-          )}
+          {past.length > 0 && (() => {
+            const shown = past.slice(0, pastShown);
+            const left  = past.length - shown.length;
+            return (
+              <View style={styles.box}>
+                <Text style={styles.boxLabel}>Already happened</Text>
+                {shown.map((e, i) => eventRow(e, i, shown))}
+                {left > 0 && (
+                  <TouchableOpacity
+                    style={styles.evMore}
+                    activeOpacity={0.7}
+                    onPress={() => setPastShown((n) => n + 3)}>
+                    <Text style={styles.evMoreText}>
+                      See {Math.min(3, left)} more{left > 3 ? ` (${left} left)` : ''}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                <Text style={styles.emptyNote}>
+                  Open any of these to add photos. They are kept together as one memory, so the
+                  trip comes back round on its anniversary.
+                </Text>
+              </View>
+            );
+          })()}
 
           {/* ── Family knowledge ─────────────────────────────── */}
           {people.length > 0 && (
@@ -521,6 +538,8 @@ const styles = StyleSheet.create({
   evWho:        { fontSize: 12, color: C.inkMid, marginTop: 2 },
   evPhotos:     { fontSize: 13, fontWeight: '700', color: C.ink },
   evPhotosNone: { color: C.green },
+  evMore:       { alignSelf: 'center', paddingVertical: 10, paddingHorizontal: 16 },
+  evMoreText:   { fontSize: 13, fontWeight: '700', color: C.green },
 
   peopleRow:    { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 },
   person:       { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: 'rgba(58,107,74,0.09)', borderRadius: 18, paddingVertical: 10, paddingHorizontal: 14 },
